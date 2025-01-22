@@ -89,6 +89,15 @@ class BicycleModelDimensions(_SimpleBackWheelAnchoredCarDimensions):
         # an arbitrary width + some extra margin at the back and the front
         return 2.0, self.distance_back_to_front_wheel + 0.64
 
+class BicycleRealDimensions(_SimpleBackWheelAnchoredCarDimensions):
+    @property
+    def distance_back_to_front_wheel(self) -> float:
+        return 1.0
+
+    @property
+    def bounding_box_size(self) -> Tuple[float, float]:
+        # an arbitrary width + some extra margin at the back and the front
+        return 0.45, self.distance_back_to_front_wheel + 0.64
 
 class PriusDimensions(_SimpleBackWheelAnchoredCarDimensions):
 
