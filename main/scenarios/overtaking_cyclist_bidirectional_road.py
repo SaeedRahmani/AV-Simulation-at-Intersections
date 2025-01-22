@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 
 # from envs.t_intersection import t_intersection
 from main.envs.arterial_multi_lanes import ArterialMultiLanes
-from main.lib.car_dimensions import CarDimensions, BicycleModelDimensions
+from main.lib.car_dimensions import CarDimensions, BicycleModelDimensions, BicycleRealDimensions
 from main.lib.collision_avoidance import check_collision_moving_cars, get_cutoff_curve_by_position_idx
 from main.lib.motion_primitive import load_motion_primitives
 # from lib.motion_primitive_search import MotionPrimitiveSearch
@@ -71,7 +71,10 @@ def main():
     ###################### Scenario Parameters #####################
     DT = 0.2
     mps = load_motion_primitives(version='bicycle_model')
+    # get car dimensions
     car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
+    # get bicycle dimensions
+    bicycle_dimensions = BicycleRealDimensions(skip_back_circle_collision_checking=False)
 
     # when defining the scenario, there will be no moving obstacles
     arterial = ArterialMultiLanes(num_lanes=2, goal_lane=1)
@@ -81,6 +84,7 @@ def main():
     print('scenario created')
     spawn_location_x = scenario_no_obstacles.start[0]
     spawn_location_y = scenario_no_obstacles.start[1] + 50 # offset location to give distance to the ego vehicle
+    # Bicycle size: width = 105 cm, length = 285 cm
     moving_obstacles: List[MovingObstacleArterial] = [MovingObstacleArterial(car_dimensions, spawn_location_x, spawn_location_y, 5/3.6, True, DT),]
 
     #########
@@ -163,7 +167,9 @@ def main():
                                                    frame_window=FRAME_WINDOW)
 
         # Evaluate reasons
-        reasons = evaluate_distance_to_centerline(state.x, car_dimensions.width, CENTERLINE_LOCATION, constant=1.0)
+        bicycle_width = bicycle_dimensions.bounding_box_size[0]
+        reasons_policymaker = evaluate_distance_to_centerline(state.x, bicycle_width, CENTERLINE_LOCATION, constant=1.0)
+        print(reasons_policymaker)
 
         # cutoff the curve such that it ends right before the collision (and some margin)
         if collision_xy is not None:
