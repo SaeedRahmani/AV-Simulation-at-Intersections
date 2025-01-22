@@ -21,6 +21,7 @@ from main.lib.plotting import draw_car
 from main.lib.simulation import State, Simulation, History, HistorySimulation
 from main.lib.trajectories import resample_curve, calc_nearest_index_in_direction
 from main.lib.plotting import draw_astar_search_points
+from main.lib.reasons_evaluation import evaluate_distance_to_centerline
 import time
 
 
@@ -72,25 +73,28 @@ def main():
     mps = load_motion_primitives(version='bicycle_model')
     car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
 
+    # when defining the scenario, there will be no moving obstacles
     arterial = ArterialMultiLanes(num_lanes=2, goal_lane=1)
-    scenario = arterial.create_scenario()
+    scenario_no_obstacles = arterial.create_scenario()
 
     # scenario = t_intersection(turn_left=True)
     print('scenario created')
-    spawn_location_x = scenario.start[0]
-    spawn_location_y = scenario.start[1] + 30
-    moving_obstacles: List[MovingObstacleArterial] = [MovingObstacleArterial(car_dimensions, spawn_location_x, spawn_location_y, 25/3.6, True, DT),]
+    spawn_location_x = scenario_no_obstacles.start[0]
+    spawn_location_y = scenario_no_obstacles.start[1] + 50 # offset location to give distance to the ego vehicle
+    moving_obstacles: List[MovingObstacleArterial] = [MovingObstacleArterial(car_dimensions, spawn_location_x, spawn_location_y, 5/3.6, True, DT),]
 
     #########
     # MOTION PRIMITIVE SEARCH
     #########
 
     start_time = time.time()
-    
-    search = MotionPrimitiveSearch(scenario, car_dimensions, mps, margin=car_dimensions.radius)
+
+    # Initial search before facing any obstacles
+    search = MotionPrimitiveSearch(scenario_no_obstacles, car_dimensions, mps, margin=car_dimensions.radius)
+    # search.run will run a* search and return the cost, path, and trajectory
     cost, path, trajectory_full = search.run(debug=True)
     print('search finished')
-    plot_motion_primitives(search, scenario, path, car_dimensions)
+    plot_motion_primitives(search, scenario_no_obstacles, path, car_dimensions)
     end_time = time.time()
     search_runtime = end_time - start_time
     print('search runtime is: {}'.format(search_runtime))
@@ -114,6 +118,7 @@ def main():
     FRAME_WINDOW = 20
     EXTRA_CUTOFF_MARGIN = 4 * int(
         math.ceil(car_dimensions.radius / dl))  # no. of frames - corresponds approximately to car length
+    CENTERLINE_LOCATION = 0.0
 
     traj_agent_idx = 0
     tmp_trajectory = None
@@ -157,6 +162,9 @@ def main():
         collision_xy = check_collision_moving_cars(car_dimensions, trajectory_res, trajectory, trajs_moving_obstacles,
                                                    frame_window=FRAME_WINDOW)
 
+        # Evaluate reasons
+        reasons = evaluate_distance_to_centerline(state.x, car_dimensions.width, CENTERLINE_LOCATION, constant=1.0)
+
         # cutoff the curve such that it ends right before the collision (and some margin)
         if collision_xy is not None:
             cutoff_idx = get_cutoff_curve_by_position_idx(trajectory_full, collision_xy[0],
@@ -164,6 +172,11 @@ def main():
             cutoff_idx = max(traj_agent_idx + 1, cutoff_idx)
             # cutoff_idx = max(traj_agent_idx + 1, cutoff_idx)
             tmp_trajectory = trajectory_full[:cutoff_idx]
+            ## add if to go back to the global planner ##################
+            # evaluate the current position of the vehicle and the moving obstacles, evaluate the reasons.
+            # need to first define the reasons. Use the one created in the power point.
+            # recreate scenario with MotionPrimitiveSearch, with the current location of the vehicle and the moving obstacles
+            # when go back to the planner, add moving obstacles to the scenario
         else:
             tmp_trajectory = trajectory_full
 
@@ -179,7 +192,7 @@ def main():
         loop_runtimes.append(loop_runtime)
 
         # show the computation results
-        visualize_frame(DT, FRAME_WINDOW, car_dimensions, collision_xy, i, moving_obstacles, mpc, scenario, simulation,
+        visualize_frame(DT, FRAME_WINDOW, car_dimensions, collision_xy, i, moving_obstacles, mpc, scenario_no_obstacles, simulation,
                         state, tmp_trajectory, trajectory_res, trajs_moving_obstacles)
 
         # move all obstacles forward
