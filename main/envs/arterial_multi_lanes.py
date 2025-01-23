@@ -27,6 +27,7 @@ class ArterialMultiLanes:
         return True
 
     def calculate_offsets(self):
+        # to determine the location of the pavements
         left_pavement = - (self.num_lanes * self.width_road / 2) - (self.width_pavement / 2)
         right_pavement = (self.num_lanes * self.width_road / 2) + (self.width_pavement / 2)
         lane_offset = (self.num_lanes // 2 - 0.5) * self.width_road - self.goal_lane_adjustment * self.width_road
