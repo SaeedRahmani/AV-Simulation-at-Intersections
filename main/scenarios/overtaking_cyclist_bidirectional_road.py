@@ -356,7 +356,7 @@ def visualize_frame(dt, frame_window, car_dimensions, bicycle_dimensions, collis
         plt.axis("equal")
         plt.grid(False)
 
-        plt.xlim((state.x - 10, state.x + 10))
+        plt.xlim((state.x - 10, state.x + 15))
         plt.ylim((state.y - 10, state.y + 15))
         # if i == 35:
         #     time.sleep(5000)
