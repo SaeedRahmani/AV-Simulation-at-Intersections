@@ -10,14 +10,14 @@ from matplotlib import pyplot as plt
 # from envs.t_intersection import t_intersection
 from main.envs.arterial_multi_lanes import ArterialMultiLanes
 from main.lib.car_dimensions import CarDimensions, BicycleModelDimensions, BicycleRealDimensions
-from main.lib.collision_avoidance import check_collision_moving_cars, get_cutoff_curve_by_position_idx
+from main.lib.collision_avoidance import check_collision_moving_cars, get_cutoff_curve_by_position_idx, check_collision_moving_bicycle
 from main.lib.motion_primitive import load_motion_primitives
 # from lib.motion_primitive_search import MotionPrimitiveSearch
 from main.lib.motion_primitive_search_modified import MotionPrimitiveSearch
 from main.lib.moving_obstacles import MovingObstacleArterial
 from main.lib.moving_obstacles_prediction import MovingObstaclesPrediction
 from main.lib.mpc import MPC, MAX_ACCEL
-from main.lib.plotting import draw_car
+from main.lib.plotting import draw_car, draw_bicycle
 from main.lib.simulation import State, Simulation, History, HistorySimulation
 from main.lib.trajectories import resample_curve, calc_nearest_index_in_direction
 from main.lib.plotting import draw_astar_search_points
@@ -82,10 +82,9 @@ def main():
 
     # scenario = t_intersection(turn_left=True)
     print('scenario created')
-    spawn_location_x = scenario_no_obstacles.start[0]
+    spawn_location_x = scenario_no_obstacles.start[0] + 1.7
     spawn_location_y = scenario_no_obstacles.start[1] + 50 # offset location to give distance to the ego vehicle
-    # Bicycle size: width = 105 cm, length = 285 cm
-    moving_obstacles: List[MovingObstacleArterial] = [MovingObstacleArterial(car_dimensions, spawn_location_x, spawn_location_y, 5/3.6, True, DT),]
+    moving_obstacles: List[MovingObstacleArterial] = [MovingObstacleArterial(bicycle_dimensions, spawn_location_x, spawn_location_y, 5/3.6, True, DT),]
 
     #########
     # MOTION PRIMITIVE SEARCH
@@ -158,12 +157,12 @@ def main():
 
         # predict the movement of each moving obstacle, and retrieve the predicted trajectories
         trajs_moving_obstacles = [
-            np.vstack(MovingObstaclesPrediction(*o.get(), sample_time=DT, car_dimensions=car_dimensions)
+            np.vstack(MovingObstaclesPrediction(*o.get(), sample_time=DT, car_dimensions=bicycle_dimensions)
                       .state_prediction(TIME_HORIZON)).T
             for o in moving_obstacles]
 
         # find the collision location
-        collision_xy = check_collision_moving_cars(car_dimensions, trajectory_res, trajectory, trajs_moving_obstacles,
+        collision_xy = check_collision_moving_bicycle(car_dimensions, bicycle_dimensions, trajectory_res, trajectory, trajs_moving_obstacles,
                                                    frame_window=FRAME_WINDOW)
 
         # Evaluate reasons
@@ -198,7 +197,7 @@ def main():
         loop_runtimes.append(loop_runtime)
 
         # show the computation results
-        visualize_frame(DT, FRAME_WINDOW, car_dimensions, collision_xy, i, moving_obstacles, mpc, scenario_no_obstacles, simulation,
+        visualize_frame(DT, FRAME_WINDOW, car_dimensions, bicycle_dimensions, collision_xy, i, moving_obstacles, mpc, scenario_no_obstacles, simulation,
                         state, tmp_trajectory, trajectory_res, trajs_moving_obstacles)
 
         # move all obstacles forward
@@ -321,7 +320,7 @@ def visualize_final(history: History):
     plt.tight_layout()
     plt.show()
     
-def visualize_frame(dt, frame_window, car_dimensions, collision_xy, i, moving_obstacles, mpc, scenario, simulation,
+def visualize_frame(dt, frame_window, car_dimensions, bicycle_dimensions, collision_xy, i, moving_obstacles, mpc, scenario, simulation,
                     state, tmp_trajectory, trajectory_res, trajs_moving_obstacles):
     if i >= 0:
         plt.cla()
@@ -337,11 +336,12 @@ def visualize_frame(dt, frame_window, car_dimensions, collision_xy, i, moving_ob
             plt.plot(tr[:, 0], tr[:, 1], color='b')
 
         for obstacle in scenario.obstacles:
-            obstacle.draw(plt.gca(), color='b')
+            obstacle.draw(plt.gca(), color='grey')
 
         for mo in moving_obstacles:
             x, y, _, theta, _, _ = mo.get()
-            draw_car((x, y, theta), car_dimensions, ax=plt.gca())
+            draw_bicycle((x, y, theta), bicycle_dimensions, ax=plt.gca(), draw_collision_circles=True, color='black')
+
 
         plt.plot(simulation.history.x, simulation.history.y, '-r')
 
@@ -350,14 +350,14 @@ def visualize_frame(dt, frame_window, car_dimensions, collision_xy, i, moving_ob
 
         plt.plot(mpc.xref[0, :], mpc.xref[1, :], "+k", label="xref")
 
-        draw_car((state.x, state.y, state.yaw), steer=mpc.di, car_dimensions=car_dimensions, ax=plt.gca(), color='k')
+        draw_car((state.x, state.y, state.yaw), steer=mpc.di, car_dimensions=car_dimensions, ax=plt.gca(), color='k', draw_collision_circles=True)
 
         plt.title("Time: %.2f [s]" % (i * dt))
         plt.axis("equal")
         plt.grid(False)
 
-        plt.xlim((-45, 45))
-        plt.ylim((-45, 45))
+        plt.xlim((state.x - 10, state.x + 10))
+        plt.ylim((state.y - 10, state.y + 15))
         # if i == 35:
         #     time.sleep(5000)
         plt.pause(0.001)
