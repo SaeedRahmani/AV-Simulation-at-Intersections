@@ -21,7 +21,7 @@ from main.lib.plotting import draw_car, draw_bicycle
 from main.lib.simulation import State, Simulation, History, HistorySimulation
 from main.lib.trajectories import resample_curve, calc_nearest_index_in_direction
 from main.lib.plotting import draw_astar_search_points
-from main.lib.reasons_evaluation import evaluate_distance_to_centerline
+from main.lib.reasons_evaluation import evaluate_distance_to_centerline, evaluate_time_following
 import time
 
 
@@ -70,6 +70,23 @@ def main():
     #########
     ###################### Scenario Parameters #####################
     DT = 0.2
+
+    ###################### Reasons Parameters #####################
+    time_passed_driver = 0 # for driver reasons
+    distance_ref_driver = 10 # below 10 meters is the trigger of the driver patience
+    distance_buffer_driver = 2 # +- 2 meters is the buffer for the driver patience
+    time_threshold_driver = 10 # 10 seconds is the threshold for the driver patience
+
+    time_passed_cyclist = 0
+    distance_ref_cyclist = 7 # below 5 meters is the trigger of the driver patience
+    distance_buffer_cyclist = 2 # +- 2 meters is the buffer for the driver patience
+    time_threshold_cyclist = 5 # 5 seconds is the threshold for the driver patience
+    reasons_policymaker_values = []
+    reasons_driver_values = []
+    reasons_cyclist_values = []
+    distance_values = []
+    time_values = []
+
     mps = load_motion_primitives(version='bicycle_model')
     # get car dimensions
     car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
@@ -128,7 +145,7 @@ def main():
 
     loop_runtimes = []
     
-    # creating a list to store the location of obstacles through time for visulization
+    # creating a list to store the location of obstacles through time for visualization
     obstacles_positions = [[] for _ in moving_obstacles]
     
     start_time = time.time()
@@ -166,9 +183,12 @@ def main():
                                                    frame_window=FRAME_WINDOW)
 
         # Evaluate reasons
-        bicycle_width = bicycle_dimensions.bounding_box_size[0]
-        reasons_policymaker = evaluate_distance_to_centerline(state.x, bicycle_width, CENTERLINE_LOCATION, constant=1.0)
-        print(reasons_policymaker)
+        car_width = car_dimensions.bounding_box_size[0]
+        reasons_policymaker_reg_compliance = evaluate_distance_to_centerline(state.x, car_width, CENTERLINE_LOCATION, constant=1.0)
+        reasons_driver_time_eff , time_passed_driver = evaluate_time_following('driver_reasons', DT, distance_buffer_driver, distance_ref_driver, time_threshold_driver, moving_obstacles, state, time_passed_driver)
+        reasons_cyclist_time_eff, time_passed_cyclist = evaluate_time_following('cyclist_reasons', DT, distance_buffer_cyclist, distance_ref_cyclist, time_threshold_cyclist, moving_obstacles, state, time_passed_cyclist)
+        # IF REASONS < 80% THEN GO BACK TO THE PLANNER
+        # With if else, if one of the reasons is below 50%, then time to replan.
 
         # cutoff the curve such that it ends right before the collision (and some margin)
         if collision_xy is not None:
@@ -197,8 +217,10 @@ def main():
         loop_runtimes.append(loop_runtime)
 
         # show the computation results
-        visualize_frame(DT, FRAME_WINDOW, car_dimensions, bicycle_dimensions, collision_xy, i, moving_obstacles, mpc, scenario_no_obstacles, simulation,
-                        state, tmp_trajectory, trajectory_res, trajs_moving_obstacles)
+        visualize_frame(DT, car_dimensions, bicycle_dimensions, collision_xy, i, moving_obstacles, mpc, scenario_no_obstacles, simulation,
+                        state, tmp_trajectory, trajectory_res,
+                        reasons_cyclist_values, reasons_driver_values, reasons_policymaker_values, distance_values, # empty arrays
+                        reasons_cyclist_time_eff, reasons_driver_time_eff, reasons_policymaker_reg_compliance, time_values) # value to the empty arrays
 
         # move all obstacles forward
         for i_obs, o in enumerate(moving_obstacles):
@@ -319,49 +341,124 @@ def visualize_final(history: History):
     plt.ylabel("Deviation [m]", fontsize=fontsize)
     plt.tight_layout()
     plt.show()
-    
-def visualize_frame(dt, frame_window, car_dimensions, bicycle_dimensions, collision_xy, i, moving_obstacles, mpc, scenario, simulation,
-                    state, tmp_trajectory, trajectory_res, trajs_moving_obstacles):
+
+def plot_car_and_obstacles(ax, tmp_trajectory, collision_xy, state, trajectory_res, scenario, moving_obstacles,
+                           simulation, mpc, car_dimensions, bicycle_dimensions, i, dt):
+    # Plot the vehicle's trajectory and obstacles (Original plot)
+    ax.set_facecolor('#AFABAB')
+    ax.plot(tmp_trajectory[:, 0], tmp_trajectory[:, 1], color='b')
+
+    if collision_xy is not None:
+        ax.scatter([collision_xy[0]], [collision_xy[1]], color='r')
+
+    ax.scatter([state.x], [state.y], color='r')
+    ax.scatter([trajectory_res[0, 0]], [trajectory_res[0, 1]], color='b')
+
+    # Explicitly call draw method on ax for each obstacle
+    for obstacle in scenario.obstacles:
+        obstacle.draw(ax, color='#9ED386')  # Draw obstacles on ax1
+
+    # Vertical lines
+    ax.axvline(x=0 + 0.3, color='#FFBD00')
+    ax.axvline(x=0 - 0.3, color='#FFBD00')
+    ax.axvline(x=0 + 3.8, color='#FFFFFF')
+    ax.axvline(x=0 - 3.8, color='#FFFFFF')
+
+    # Draw moving obstacles explicitly on ax
+    for mo in moving_obstacles:
+        x, y, _, theta, _, _ = mo.get()
+        draw_bicycle((x, y, theta), bicycle_dimensions, ax=ax, draw_collision_circles=False, color='black')
+
+    ax.plot(simulation.history.x, simulation.history.y, '-r')
+
+    if mpc.ox is not None:
+        ax.plot(mpc.ox, mpc.oy, "+r", label="MPC")
+
+    ax.plot(mpc.xref[0, :], mpc.xref[1, :], "+k", label="xref")
+
+    draw_car((state.x, state.y, state.yaw), steer=mpc.di, car_dimensions=car_dimensions, ax=ax, color='k',
+             draw_collision_circles=False)
+
+    ax.set_title("Time: %.2f [s]" % (i * dt))
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.axis("equal")
+    ax.grid(True)
+    ax.set_xlim((state.x, state.x + 10))
+    ax.set_ylim((state.y - 5, state.y + 20))
+
+def plot_reasons(ax, time_values, reasons_policymaker_values, reasons_driver_values, reasons_cyclist_values):
+    # Plot reasons values over time
+    ax.clear()  # Clear the axis for each new update
+
+    ax.plot(time_values, reasons_policymaker_values, label='Policymaker Compliance')
+    ax.plot(time_values, reasons_driver_values, label='Driver Time Efficiency')
+    # If you see cyclist reasons intermitten it is because the time_passed is updated every time it is below the threshold.
+    # When it is above threshold, for instance 5, it will decrease. But when the score above threshold again, it becomes 1
+    ax.plot(time_values, reasons_cyclist_values, label='Cyclist Time Efficiency')
+
+    ax.set_xlabel('Time Frame', fontsize=15)
+    ax.set_ylabel('Reasons Value (0-1)', fontsize=15)
+    ax.set_title('Reasons Values Over Time', fontsize=18)
+    ax.set_ylim([0, 1.1])
+    ax.legend(fontsize=12)
+    ax.grid(True)
+
+def plot_distance(ax, time_values, distance_values):
+    # Plot reasons values over time
+    ax.clear()  # Clear the axis for each new update
+
+    # Plot the distance values
+    ax.plot(time_values, distance_values, label='Distance between Car and Bicycle')
+
+    # Add vertical lines at 12m and 9m distance
+    # Use axvline to add vertical lines at the time corresponding to distances of 12 and 9 meters
+    for i, dist in enumerate(distance_values):
+        if dist <= 12 and distance_values[i-1] > 12:  # Check when the distance crosses 12 meters
+            ax.axvline(time_values[i], color='r', linestyle='--', label='12m Threshold')
+        if dist <= 9 and distance_values[i-1] > 9:  # Check when the distance crosses 9 meters
+            ax.axvline(time_values[i], color='g', linestyle='--', label='9m Threshold')
+
+    # Set axis labels and title
+    ax.set_xlabel('Time Frame', fontsize=15)
+    ax.set_ylabel('Distance', fontsize=15)
+    ax.set_title('Distance Between Car and Bicycle', fontsize=18)
+
+    # Add legend
+    ax.legend(fontsize=12)
+
+    # Enable grid
+    ax.grid(True)
+
+
+def visualize_frame(dt, car_dimensions, bicycle_dimensions, collision_xy, i, moving_obstacles, mpc,
+                    scenario, simulation, state, tmp_trajectory, trajectory_res,
+                    reasons_cyclist_values, reasons_driver_values, reasons_policymaker_values, distance_values,
+                    reasons_cyclist_time_eff, reasons_driver_time_eff, reasons_policymaker_reg_compliance, time_values):
     if i >= 0:
-        plt.cla()
-        plt.plot(tmp_trajectory[:, 0], tmp_trajectory[:, 1], color='b')
+        # Create subplots (1 row, 2 columns) - ax1 for the original plot and ax2 for reasons over time
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(16, 5))  # Adjust the size as needed
 
-        if collision_xy is not None:
-            plt.scatter([collision_xy[0]], [collision_xy[1]], color='r')
+        # Update ax1 with the car, obstacles, and other related information
+        plot_car_and_obstacles(ax1, tmp_trajectory, collision_xy, state, trajectory_res, scenario, moving_obstacles,
+                               simulation, mpc, car_dimensions, bicycle_dimensions, i, dt)
 
-        plt.scatter([state.x], [state.y], color='r')
-        plt.scatter([trajectory_res[0, 0]], [trajectory_res[0, 1]], color='b')
+        # Update ax2 with reasons values over time
+        time_value = i * dt  # Time value for current simulation step
+        time_values.append(time_value)
+        reasons_policymaker_values.append(reasons_policymaker_reg_compliance)
+        reasons_driver_values.append(reasons_driver_time_eff)
+        reasons_cyclist_values.append(reasons_cyclist_time_eff)
+        distance_values.append(np.linalg.norm(
+            [moving_obstacles[0].get()[0] - state.x, moving_obstacles[0].get()[1] - state.y]))  # Placeholder for distance values
 
-        for tr in [*trajs_moving_obstacles]:
-            plt.plot(tr[:, 0], tr[:, 1], color='b')
+        plot_reasons(ax2, time_values, reasons_policymaker_values, reasons_driver_values, reasons_cyclist_values)
+        plot_distance(ax3, time_values, distance_values)
 
-        for obstacle in scenario.obstacles:
-            obstacle.draw(plt.gca(), color='grey')
-
-        for mo in moving_obstacles:
-            x, y, _, theta, _, _ = mo.get()
-            draw_bicycle((x, y, theta), bicycle_dimensions, ax=plt.gca(), draw_collision_circles=True, color='black')
-
-
-        plt.plot(simulation.history.x, simulation.history.y, '-r')
-
-        if mpc.ox is not None:
-            plt.plot(mpc.ox, mpc.oy, "+r", label="MPC")
-
-        plt.plot(mpc.xref[0, :], mpc.xref[1, :], "+k", label="xref")
-
-        draw_car((state.x, state.y, state.yaw), steer=mpc.di, car_dimensions=car_dimensions, ax=plt.gca(), color='k', draw_collision_circles=True)
-
-        plt.title("Time: %.2f [s]" % (i * dt))
-        plt.axis("equal")
-        plt.grid(False)
-
-        plt.xlim((state.x - 10, state.x + 15))
-        plt.ylim((state.y - 10, state.y + 15))
-        # if i == 35:
-        #     time.sleep(5000)
+        # Adjust layout and show the plot
+        plt.tight_layout()
         plt.pause(0.001)
-        # plt.show()
+
 
 if __name__ == '__main__':
     main()
