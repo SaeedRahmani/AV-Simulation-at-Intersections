@@ -1,5 +1,7 @@
 import itertools
 import math
+import os
+import subprocess
 from typing import List
 import sys
 sys.path.append('..')
@@ -8,6 +10,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 # from envs.t_intersection import t_intersection
+from main.lib.obstacles import BoxObstacle
 from main.envs.arterial_multi_lanes import ArterialMultiLanes
 from main.lib.car_dimensions import CarDimensions, BicycleModelDimensions, BicycleRealDimensions
 from main.lib.collision_avoidance import check_collision_moving_cars, get_cutoff_curve_by_position_idx, check_collision_moving_bicycle
@@ -64,7 +67,7 @@ def plot_scenario_with_car(scenario, car_state, car_dimensions, ax):
     plt.grid(True)
     plt.show()
 
-def main():
+def main(supervision=False):
     #########
     # INIT ENVIRONMENT
     #########
@@ -100,7 +103,7 @@ def main():
     # scenario = t_intersection(turn_left=True)
     print('scenario created')
     spawn_location_x = scenario_no_obstacles.start[0] + 1.7
-    spawn_location_y = scenario_no_obstacles.start[1] + 50 # offset location to give distance to the ego vehicle
+    spawn_location_y = scenario_no_obstacles.start[1] + 40 # offset location to give distance to the ego vehicle
     moving_obstacles: List[MovingObstacleArterial] = [MovingObstacleArterial(bicycle_dimensions, spawn_location_x, spawn_location_y, 5/3.6, True, DT),]
 
     #########
@@ -187,21 +190,54 @@ def main():
         reasons_policymaker_reg_compliance = evaluate_distance_to_centerline(state.x, car_width, CENTERLINE_LOCATION, constant=1.0)
         reasons_driver_time_eff , time_passed_driver = evaluate_time_following('driver_reasons', DT, distance_buffer_driver, distance_ref_driver, time_threshold_driver, moving_obstacles, state, time_passed_driver)
         reasons_cyclist_time_eff, time_passed_cyclist = evaluate_time_following('cyclist_reasons', DT, distance_buffer_cyclist, distance_ref_cyclist, time_threshold_cyclist, moving_obstacles, state, time_passed_cyclist)
-        # IF REASONS < 80% THEN GO BACK TO THE PLANNER
-        # With if else, if one of the reasons is below 50%, then time to replan.
 
         # cutoff the curve such that it ends right before the collision (and some margin)
         if collision_xy is not None:
             cutoff_idx = get_cutoff_curve_by_position_idx(trajectory_full, collision_xy[0],
                                                           collision_xy[1]) - EXTRA_CUTOFF_MARGIN
             cutoff_idx = max(traj_agent_idx + 1, cutoff_idx)
-            # cutoff_idx = max(traj_agent_idx + 1, cutoff_idx)
-            tmp_trajectory = trajectory_full[:cutoff_idx]
             ## add if to go back to the global planner ##################
             # evaluate the current position of the vehicle and the moving obstacles, evaluate the reasons.
             # need to first define the reasons. Use the one created in the power point.
             # recreate scenario with MotionPrimitiveSearch, with the current location of the vehicle and the moving obstacles
             # when go back to the planner, add moving obstacles to the scenario
+            '''
+            # IF REASONS < 80% THEN GO BACK TO THE PLANNER
+            '''
+            if supervision == True:
+                if reasons_policymaker_reg_compliance < 0.8 or reasons_driver_time_eff < 0.8 or reasons_cyclist_time_eff < 0.8:
+                    # I want to print which reasons is below 0.8
+                    if reasons_policymaker_reg_compliance < 0.8:
+                        # print reasons policmaker compliance
+                        print(reasons_policymaker_values)
+                        print('Reasons below 80%, Policymaker Compliance, Replan')
+                    if reasons_driver_time_eff < 0.8:
+                        print('Reasons below 80%, Driver Time Efficiency, Replan')
+                    if reasons_cyclist_time_eff < 0.8:
+                        print('Reasons below 80%, Cyclist Time Efficiency, Replan')
+
+                    # get current moving_obstacles x position
+                    moving_obstacles_x = [o.get()[0] for o in moving_obstacles]
+                    # get current moving_obstacles y position
+                    moving_obstacles_y = [o.get()[1] for o in moving_obstacles]
+                    scenario_obstacles = arterial.create_scenario(moving_obstacles=True,
+                                                                  spawn_location_x=moving_obstacles_x[0],
+                                                                  spawn_location_y=moving_obstacles_y[0],
+                                                                  av_location_x=state.x, av_location_y=state.y)
+                    print(f"Initial position: {scenario_obstacles.start}")
+                    search = MotionPrimitiveSearch(scenario_obstacles, car_dimensions, mps, margin=car_dimensions.radius)
+                    # search.run will run a* search and return the cost, path, and trajectory
+                    cost, path, trajectory_full = search.run(debug=True)
+                    tmp_trajectory = trajectory_full
+                    # reset index of the trajectory of the agent
+                    traj_agent_idx = 0
+                    # reset mpc with new trajectory_full
+                    mpc = MPC(cx=trajectory_full[:, 0], cy=trajectory_full[:, 1], cyaw=trajectory_full[:, 2], dl=dl, dt=DT,
+                              car_dimensions=car_dimensions)
+                else:
+                    tmp_trajectory = trajectory_full[:cutoff_idx]
+            else:
+                tmp_trajectory = trajectory_full[:cutoff_idx]
         else:
             tmp_trajectory = trajectory_full
 
@@ -435,8 +471,14 @@ def visualize_frame(dt, car_dimensions, bicycle_dimensions, collision_xy, i, mov
                     scenario, simulation, state, tmp_trajectory, trajectory_res,
                     reasons_cyclist_values, reasons_driver_values, reasons_policymaker_values, distance_values,
                     reasons_cyclist_time_eff, reasons_driver_time_eff, reasons_policymaker_reg_compliance, time_values):
+    # Define the folder path
+    save_folder = os.path.join("..", "results", "reasons_evaluation")
+
+    # Ensure the folder exists (create it if it doesn't)
+    os.makedirs(save_folder, exist_ok=True)
+
     if i >= 0:
-        # Create subplots (1 row, 2 columns) - ax1 for the original plot and ax2 for reasons over time
+        # Create subplots (1 row, 3 columns) - ax1 for the original plot and ax2 for reasons over time
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(16, 5))  # Adjust the size as needed
 
         # Update ax1 with the car, obstacles, and other related information
@@ -457,9 +499,22 @@ def visualize_frame(dt, car_dimensions, bicycle_dimensions, collision_xy, i, mov
 
         # Adjust layout and show the plot
         plt.tight_layout()
-        plt.pause(0.001)
+
+        # Save the figure to the specified folder
+        save_path = os.path.join(save_folder, f"frame_{i:04d}.jpg")
+        plt.savefig(save_path, format='jpg')
+
+        # plt.pause(0.001)
+
+        plt.close()
 
 
 if __name__ == '__main__':
-    main()
+    main(supervision=True)
+    # Change directory
+    print(os.getcwd())
+    os.chdir('/Users/lsuryana/PycharmProjects/MPC_for_AV_at_Intersection/main/results/reasons_evaluation/')
+    # Run the ffmpeg command
+    subprocess.run(['ffmpeg', '-framerate', '5', '-i', 'frame_%04d.jpg', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                    'output_video.mp4'])
 
