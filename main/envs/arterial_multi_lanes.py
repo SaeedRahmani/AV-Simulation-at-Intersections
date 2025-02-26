@@ -35,7 +35,9 @@ class ArterialMultiLanes:
             lane_offset += self.width_road / 2
         return left_pavement, right_pavement, lane_offset
 
-    def create_scenario(self):
+    def create_scenario(self, moving_obstacles=False,
+                        spawn_location_x=None, spawn_location_y=None,
+                        av_location_x=None, av_location_y=None):
         if not self.validate_lanes():
             return None
 
@@ -44,17 +46,23 @@ class ArterialMultiLanes:
         goal = (lane_offset, self.length / 2, np.pi/2)
         goal_area = BoxObstacle(xy_width=(self.width_road, self.width_road), height=1, xy_center=(goal[0], goal[1]))
 
-        obstacles = [
-            BoxObstacle(xy_width=(self.width_pavement, self.length), height=1, xy_center=(left_pavement, 0)),
-            BoxObstacle(xy_width=(self.width_pavement, self.length), height=0.1, xy_center=(right_pavement, 0))
-        ]
-
+        if moving_obstacles is True:
+            start = (av_location_x, av_location_y, np.pi / 2)
+            obstacles = [
+                BoxObstacle(xy_width=(self.width_pavement, self.length), height=1, xy_center=(left_pavement, 0)),
+                BoxObstacle(xy_width=(self.width_pavement, self.length), height=0.1, xy_center=(right_pavement, 0)),
+                BoxObstacle(xy_width=(1.64, 1.64), height=0.1, xy_center=(spawn_location_x, spawn_location_y))
+            ]
+        else:
+            obstacles = [
+                BoxObstacle(xy_width=(self.width_pavement, self.length), height=1, xy_center=(left_pavement, 0)),
+                BoxObstacle(xy_width=(self.width_pavement, self.length), height=0.1, xy_center=(right_pavement, 0))]
         return Scenario(
             start=start,
             goal_point=goal,
             goal_area=goal_area,
             allowed_goal_theta_difference=self.allowed_goal_theta_difference,
-            obstacles=obstacles,
+            obstacles=obstacles
         )
 
 if __name__ == '__main__':
