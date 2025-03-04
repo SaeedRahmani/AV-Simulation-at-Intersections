@@ -1,35 +1,33 @@
-import itertools
-import math
+# Standard library
 import os
+import sys
 import csv
+import time
+import math
+import itertools
 import subprocess
 from typing import List
-import sys
 
-sys.path.append('..')
-
+# Third-party libraries
 import numpy as np
 from matplotlib import pyplot as plt
+import matplotlib.ticker as ticker
+import matplotlib.gridspec as gridspec
 
-# from envs.t_intersection import t_intersection
-from main.lib.obstacles import BoxObstacle
+# Local modules
+sys.path.append('..')
 from main.envs.arterial_multi_lanes import ArterialMultiLanes
 from main.lib.car_dimensions import CarDimensions, BicycleModelDimensions, BicycleRealDimensions
-from main.lib.collision_avoidance import check_collision_moving_cars, get_cutoff_curve_by_position_idx, \
-    check_collision_moving_bicycle
+from main.lib.collision_avoidance import get_cutoff_curve_by_position_idx, check_collision_moving_bicycle
 from main.lib.motion_primitive import load_motion_primitives
-# from lib.motion_primitive_search import MotionPrimitiveSearch
 from main.lib.motion_primitive_search_modified import MotionPrimitiveSearch
 from main.lib.moving_obstacles import MovingObstacleArterial
 from main.lib.moving_obstacles_prediction import MovingObstaclesPrediction
 from main.lib.mpc import MPC, MAX_ACCEL
-from main.lib.plotting import draw_car, draw_bicycle
+from main.lib.plotting import draw_car, draw_bicycle, draw_astar_search_points
 from main.lib.simulation import State, Simulation, History, HistorySimulation
 from main.lib.trajectories import resample_curve, calc_nearest_index_in_direction
-from main.lib.plotting import draw_astar_search_points
-from main.lib.reasons_evaluation import evaluate_distance_to_centerline, evaluate_time_following, \
-    evaluate_distance_to_obstacle
-import time
+from main.lib.reasons_evaluation import evaluate_distance_to_centerline, evaluate_time_following, evaluate_distance_to_obstacle
 
 
 def plot_motion_primitives(search, scenario, path, car_dimensions):
@@ -437,10 +435,6 @@ def main(supervision=False):
     # ploting the trajectories and conflicts
     plot_trajectories(obstacles_positions, simulation.history)
 
-
-import matplotlib.ticker as ticker
-
-
 def plot_trajectories(obstacles_positions, ego_positions: History):
     # Create a new figure and get the current axes
     fig = plt.figure()
@@ -732,12 +726,6 @@ def plot_distance(ax, time_values, distance_values):
 
     # Enable grid
     ax.grid(True)
-
-
-import matplotlib.pyplot as plt
-import numpy as np
-import os
-import matplotlib.gridspec as gridspec  # Import gridspec to merge subplots
 
 def visualize_frame(dt, car_dimensions, bicycle_dimensions, collision_xy, i, moving_obstacles, mpc,
                     scenario, simulation, state, tmp_trajectory, trajectory_res,
