@@ -91,6 +91,7 @@ def check_collision_moving_cars(car_dimensions: CarDimensions, traj_agent: np.nd
     offsets = np.array(range(-frame_window, frame_window + 1, 1))
     traj_obstacles = _offset_trajectories_by_frames(traj_obstacles, offsets=offsets)
 
+    # min_distance calculation below applies if it is assumed that both vehicle are cars
     min_distance = 2 * car_dimensions.radius
 
     rows_per_frame, cc_pts_ag, cc_pts_obs = _get_rowwise_diffs(car_dimensions, traj_agent, traj_obstacles)

@@ -138,17 +138,17 @@ def draw_car(start: Tuple[float, float, float], car_dimensions: CarDimensions, a
     rl_wheel[0, :] += x
     rl_wheel[1, :] += y
 
-    plt.plot(np.array(outline[0, :]).flatten(),
+    ax.plot(np.array(outline[0, :]).flatten(),
              np.array(outline[1, :]).flatten(), color)
-    plt.plot(np.array(fr_wheel[0, :]).flatten(),
+    ax.plot(np.array(fr_wheel[0, :]).flatten(),
              np.array(fr_wheel[1, :]).flatten(), color)
-    plt.plot(np.array(rr_wheel[0, :]).flatten(),
+    ax.plot(np.array(rr_wheel[0, :]).flatten(),
              np.array(rr_wheel[1, :]).flatten(), color)
-    plt.plot(np.array(fl_wheel[0, :]).flatten(),
+    ax.plot(np.array(fl_wheel[0, :]).flatten(),
              np.array(fl_wheel[1, :]).flatten(), color)
-    plt.plot(np.array(rl_wheel[0, :]).flatten(),
+    ax.plot(np.array(rl_wheel[0, :]).flatten(),
              np.array(rl_wheel[1, :]).flatten(), color)
-    plt.plot(x, y, "*", color=color)
+    ax.plot(x, y, "*", color=color)
 
     if draw_collision_circles:
         circle_center_mtx = create_2d_transform_mtx(*start)
@@ -205,13 +205,13 @@ def draw_bicycle(start: Tuple[float, float, float], car_dimensions: CarDimension
     rr_wheel[0, :] += x
     rr_wheel[1, :] += y
 
-    plt.plot(np.array(outline[0, :]).flatten(),
+    ax.plot(np.array(outline[0, :]).flatten(),
              np.array(outline[1, :]).flatten(), color)
-    plt.plot(np.array(fr_wheel[0, :]).flatten(),
+    ax.plot(np.array(fr_wheel[0, :]).flatten(),
              np.array(fr_wheel[1, :]).flatten(), color)
-    plt.plot(np.array(rr_wheel[0, :]).flatten(),
+    ax.plot(np.array(rr_wheel[0, :]).flatten(),
              np.array(rr_wheel[1, :]).flatten(), color)
-    plt.plot(x, y, "*", color=color)
+    ax.plot(x, y, "*", color=color)
 
     if draw_collision_circles:
         circle_center_mtx = create_2d_transform_mtx(*start)
