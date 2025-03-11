@@ -80,7 +80,7 @@ def main(supervision=False):
     DT = 0.2
 
     ###################### Reasons Parameters #####################
-    time_passed_driver = 0  # for driver reasons
+    TIME_ELAPSED_DRIVER = 0  # time elapsed since the driver followed the bicycle at a distance less than
     distance_ref_driver = 10  # below 10 meters is the trigger of the driver patience
     distance_buffer_driver = 2  # +- 2 meters is the buffer for the driver patience
     time_threshold_driver = 10  # 10 seconds is the threshold for the driver patience
@@ -214,11 +214,11 @@ def main(supervision=False):
         # Evaluate reasons
         car_width = car_dimensions.bounding_box_size[0]
         reasons_policymaker_reg_compliance = evaluate_distance_to_centerline(state.x, car_width, CENTERLINE_LOCATION)
-        reasons_driver_time_eff, time_passed_driver = evaluate_time_following('driver_reasons', DT,
+        reasons_driver_time_eff, TIME_ELAPSED_DRIVER = evaluate_time_following('driver_reasons', DT,
                                                                               distance_buffer_driver,
                                                                               distance_ref_driver,
                                                                               time_threshold_driver, moving_obstacles,
-                                                                              state, time_passed_driver)
+                                                                              state, TIME_ELAPSED_DRIVER)
         reasons_cyclist_time_eff, time_passed_cyclist = evaluate_time_following('cyclist_reasons', DT,
                                                                                 distance_buffer_cyclist,
                                                                                 distance_ref_cyclist,
@@ -782,7 +782,7 @@ def visualize_frame(dt, car_dimensions, bicycle_dimensions, collision_xy, i, mov
 
 if __name__ == '__main__':
     # if supervision=True, the vehicle will be replanned if the reasons are below 80%
-    main(supervision=False)
+    main(supervision=True)
     # Change directory
     print(os.getcwd())
     os.chdir('/Users/lsuryana/PycharmProjects/MPC_for_AV_at_Intersection/main/results/reasons_evaluation/')
