@@ -783,24 +783,31 @@ def plot_velocity(ax, time_values, speed_values):
     # Enable grid
     ax.grid(True)
 
-def plot_distance(ax, time_values, distance_values):
-    # Plot reasons values over time
-    ax.clear()  # Clear the axis for each new update
+def plot_distance(ax, time_values, distance_values, DISTANCE_THRESHOLD_CAR, DISTANCE_THRESHOLD_BICYCLE):
+    # Clear the axis for each new update
+    ax.clear()
 
     # Plot the distance values
     ax.plot(time_values, distance_values, label='Distance between Car and Bicycle')
 
-    # Add vertical lines at 12m and 9m distance
-    # Use axvline to add vertical lines at the time corresponding to distances of 12 and 9 meters
-    for i, dist in enumerate(distance_values):
-        if dist <= 12 and distance_values[i - 1] > 12:  # Check when the distance crosses 12 meters
-            ax.axvline(time_values[i], color='r', linestyle='--',
-                       label='12m Threshold' if '12m Threshold' not in [line.get_label() for line in
-                                                                        ax.get_lines()] else '')
-        if dist <= 9 and distance_values[i - 1] > 9:  # Check when the distance crosses 9 meters
-            ax.axvline(time_values[i], color='g', linestyle='--',
-                       label='9m Threshold' if '9m Threshold' not in [line.get_label() for line in
-                                                                        ax.get_lines()] else '')
+    # Define thresholds dynamically based on input values
+    thresholds = [
+        {'value': DISTANCE_THRESHOLD_CAR, 'color': 'r', 'label': f'{DISTANCE_THRESHOLD_CAR}m Threshold'},
+        {'value': DISTANCE_THRESHOLD_BICYCLE, 'color': 'g', 'label': f'{DISTANCE_THRESHOLD_BICYCLE}m Threshold'}
+    ]
+
+    # Add vertical lines at the specified thresholds
+    for threshold in thresholds:
+        for i, dist in enumerate(distance_values):
+            if i == 0:  # Skip the first iteration to avoid index issues
+                continue
+            if dist <= threshold['value'] and distance_values[i - 1] > threshold['value']:
+                ax.axvline(
+                    time_values[i],
+                    color=threshold['color'],
+                    linestyle='--',
+                    label=threshold['label'] if threshold['label'] not in [line.get_label() for line in ax.get_lines()] else ''
+                )
 
     # Set axis labels and title
     ax.set_xlabel('Time Frame', fontsize=15)
