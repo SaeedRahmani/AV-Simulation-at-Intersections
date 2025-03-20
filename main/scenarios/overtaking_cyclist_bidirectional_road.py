@@ -74,6 +74,7 @@ def main(replanner: bool = False) -> None:
     # Initialization
     TIME_ELAPSED_DRIVER = 0  # time elapsed since the driver followed the bicycle at a distance less than DriverParameters.DISTANCE_REF
     TIME_PASSED_CYCLIST = 0 # time elapsed since the driver followed the bicycle at a distance less than CyclistParameters.DISTANCE_REF
+    IS_FOLLOWING = True  # Flag to determine if the driver will be following the vehicle in front
 
     # Lists to store simulation data
     reasons_policymaker_values = []
@@ -100,22 +101,20 @@ def main(replanner: bool = False) -> None:
             os.remove(os.path.join(save_folder, file))
 
     # Initialize simulation
-    mps, car_dimensions, bicycle_dimensions, arterial, scenario_no_obstacles, moving_obstacles = initialize_simulation()
+    mps, car_dimensions, bicycle_dimensions, arterial, scenario_no_obstacles, scenario_visualization, moving_obstacles = initialize_simulation()
 
     # Run motion primitive search
     cost, path, trajectory_full, search_runtime = run_motion_primitive_search(scenario_no_obstacles, car_dimensions,
                                                                               mps)
 
     # Initialize MPC
-    mpc, state, dl = initialize_mpc(trajectory_full, car_dimensions)
+    mpc, state, dl = initialize_mpc(trajectory_full, car_dimensions, max_speed=5/3.6)
 
     simulation = HistorySimulation(car_dimensions=car_dimensions, sample_time=ScenarioParameters.DT, initial_state=state)
     history = simulation.history  # gets updated automatically as simulation runs
 
-    #########
-    # SIMULATE
-    #########
-    EXTRA_CUTOFF_MARGIN = 4 * int(
+    # number of index to cut off the trajectory before a collision occurs
+    EXTRA_CUTOFF_MARGIN = 2 * int(
         math.ceil(car_dimensions.radius / dl))  # no. of frames - corresponds approximately to car length
 
     traj_agent_idx = 0
@@ -167,11 +166,18 @@ def main(replanner: bool = False) -> None:
             # Execute replan only if reasons value drop below ScenarioParameters.REASONS_THRESHOLD was detected
             if replan_needed:
                 # Perform replan, reset the trajectory, MPC, and collision status
-                collision_xy, mpc, traj_agent_idx, trajectory_full = perform_replan(arterial, car_dimensions, dl, moving_obstacles, mps, state, trajs_moving_obstacles)
+                IS_FOLLOWING = False
+                # change max_speed of the MPC to 30/3.6
+                collision_xy, mpc, traj_agent_idx, trajectory_full, scenario_obstacles = perform_replan(arterial, car_dimensions, dl, moving_obstacles, mps, state, trajs_moving_obstacles, max_speed=30/3.6, is_following=IS_FOLLOWING)
+                scenario = scenario_obstacles
 
         # Cut off the trajectory before a collision occurs, with an additional margin
-        tmp_trajectory = cutoff_trajectory_before_collision(EXTRA_CUTOFF_MARGIN, collision_xy, traj_agent_idx,
-                                                            trajectory_full)
+        if collision_xy is not None:
+            tmp_trajectory = cutoff_trajectory_before_collision(EXTRA_CUTOFF_MARGIN, collision_xy, traj_agent_idx,
+                                                                trajectory_full)
+        else:
+            tmp_trajectory = trajectory_full
+
 
         # Pass the cut trajectory to the MPC
         mpc.set_trajectory_fromarray(tmp_trajectory)
@@ -186,12 +192,12 @@ def main(replanner: bool = False) -> None:
         xref_deviation_value = mpc.get_current_xref_deviation()
         # show the computation results
         visualize_frame(ScenarioParameters.DT, car_dimensions, bicycle_dimensions, collision_xy, i, moving_obstacles, mpc,
-                        scenario_no_obstacles, simulation,
+                        scenario_visualization, simulation,
                         state, tmp_trajectory, trajectory_res,
                         reasons_cyclist_values, reasons_driver_values, reasons_policymaker_values, distance_values,
                         reasons_cyclist_comfort, reasons_driver_time_eff, reasons_policymaker_reg_compliance,
                         speed_values, time_values, xref_deviation_values, xref_deviation_value,
-                        static_x_axis=True, max_time=35) # static_x_axis=False)
+                        static_x_axis=True, max_time=20) # static_x_axis=False)
 
 
         # Move all obstacles one step ahead
@@ -236,13 +242,11 @@ def cutoff_trajectory_before_collision(EXTRA_CUTOFF_MARGIN, collision_xy, traj_a
         np.ndarray: The truncated trajectory.
     """
     # cutoff the curve such that it ends right before the collision (and some margin)
-    if collision_xy is not None:
-        cutoff_idx = get_cutoff_curve_by_position_idx(trajectory_full, collision_xy[0],
-                                                      collision_xy[1]) - EXTRA_CUTOFF_MARGIN
-        cutoff_idx = max(traj_agent_idx + 1, cutoff_idx)
-        tmp_trajectory = trajectory_full[:cutoff_idx]
-    else:
-        tmp_trajectory = trajectory_full
+    cutoff_idx = get_cutoff_curve_by_position_idx(trajectory_full, collision_xy[0],
+                                                  collision_xy[1]) - EXTRA_CUTOFF_MARGIN
+    cutoff_idx = max(traj_agent_idx + 1, cutoff_idx)
+    tmp_trajectory = trajectory_full[:cutoff_idx]
+
     return tmp_trajectory
 
 
@@ -287,7 +291,7 @@ def update_trajectory_index(state, tmp_trajectory, traj_agent_idx, trajectory_fu
     return traj_agent_idx
 
 
-def perform_replan(arterial, car_dimensions, dl, moving_obstacles, mps, state, trajs_moving_obstacles):
+def perform_replan(arterial, car_dimensions, dl, moving_obstacles, mps, state, trajs_moving_obstacles, max_speed, is_following=True):
     """
     Perform a replan based on the current state and moving obstacles.
 
@@ -315,7 +319,8 @@ def perform_replan(arterial, car_dimensions, dl, moving_obstacles, mps, state, t
         spawn_location_x=moving_obstacles_x[0],
         spawn_location_y=moving_obstacles_y[0],
         av_location_x=state.x,
-        av_location_y=state.y
+        av_location_y=state.y,
+        is_following=is_following
     )
     print(f"Initial position: {scenario_obstacles.start}")
     # Perform motion primitive search
@@ -328,10 +333,10 @@ def perform_replan(arterial, car_dimensions, dl, moving_obstacles, mps, state, t
         cx=trajectory_full[:, 0],
         cy=trajectory_full[:, 1],
         cyaw=trajectory_full[:, 2],
-        dl=dl, dt=ScenarioParameters.DT, car_dimensions=car_dimensions
+        dl=dl, speed=max_speed, dt=ScenarioParameters.DT, car_dimensions=car_dimensions
     )
     collision_xy = None  # Reset collision tracker if needed
-    return collision_xy, mpc, traj_agent_idx, trajectory_full
+    return collision_xy, mpc, traj_agent_idx, trajectory_full, scenario_obstacles
 
 
 def reasons_evaluation(reasons_cyclist_comfort, reasons_driver_time_eff, reasons_policymaker_reg_compliance,
@@ -407,6 +412,7 @@ def initialize_simulation() -> tuple:
     # Define the scenario
     arterial = ArterialMultiLanes(num_lanes=2, goal_lane=1)
     scenario_no_obstacles = arterial.create_scenario()
+    scenario_visualization = arterial.create_scenario(frame_visualization=True)
 
     # Define moving obstacles
     spawn_location_x = scenario_no_obstacles.start[0] + 1.7
@@ -415,9 +421,9 @@ def initialize_simulation() -> tuple:
         MovingObstacleArterial(bicycle_dimensions, spawn_location_x, spawn_location_y, 5 / 3.6, True, ScenarioParameters.DT)
     ]
 
-    return mps, car_dimensions, bicycle_dimensions, arterial, scenario_no_obstacles, moving_obstacles
+    return mps, car_dimensions, bicycle_dimensions, arterial, scenario_no_obstacles, scenario_visualization, moving_obstacles
 
-def initialize_mpc(trajectory_full, car_dimensions) -> tuple:
+def initialize_mpc(trajectory_full, car_dimensions, max_speed) -> tuple:
     """
     Initialize the MPC controller.
 
@@ -429,7 +435,7 @@ def initialize_mpc(trajectory_full, car_dimensions) -> tuple:
         tuple: A tuple containing the MPC object, the initial state and the distance between the points in the trajectory.
     """
     dl = np.linalg.norm(trajectory_full[0, :2] - trajectory_full[1, :2])
-    mpc = MPC(cx=trajectory_full[:, 0], cy=trajectory_full[:, 1], cyaw=trajectory_full[:, 2], dl=dl, dt=ScenarioParameters.DT, car_dimensions=car_dimensions)
+    mpc = MPC(cx=trajectory_full[:, 0], cy=trajectory_full[:, 1], cyaw=trajectory_full[:, 2], dl=dl, dt=ScenarioParameters.DT, car_dimensions=car_dimensions, speed=max_speed)
     state = State(x=trajectory_full[0, 0], y=trajectory_full[0, 1], yaw=trajectory_full[0, 2], v=0.0)
     return mpc, state, dl
 
@@ -571,6 +577,7 @@ def plot_deviation(ax,time_values,  xref_deviation_value):
     ax.grid(True)
     ax.set_xlabel("Time [s]", fontsize=fontsize)
     ax.set_ylabel("Deviation [m]", fontsize=fontsize)
+    ax.set_ylim(0, 1)  # Set the y-axis limit
 
 def visualize_final(history: History):
     fontsize = 25
@@ -697,8 +704,8 @@ def finalize_plot(ax, simulation, mpc, i, dt):
 
     ax.axis("equal")
     ax.grid(True)
-    ax.set_xlim((-10, 10))
-    ax.set_ylim((-50, 52))
+    ax.set_xlim((-10.5, 10.5))
+    ax.set_ylim((-51, 55))
 
 
 def plot_car_and_obstacles(ax, tmp_trajectory, collision_xy, state, trajectory_res, scenario, moving_obstacles,
@@ -775,6 +782,7 @@ def plot_velocity(ax, time_values, speed_values):
     # Set axis labels and title
     ax.set_xlabel('Time [s]', fontsize=25)
     ax.set_ylabel('Speed [km/h]', fontsize=25)
+    ax.set_ylim(0, 35)  # Set the y-axis limit
     # ax.set_title('Speed of the Vehicle', fontsize=20)
 
     # Add legend
@@ -824,7 +832,7 @@ def visualize_frame(dt, car_dimensions, bicycle_dimensions, collision_xy, i, mov
                     scenario, simulation, state, tmp_trajectory, trajectory_res,
                     reasons_cyclist_values, reasons_driver_values, reasons_policymaker_values, distance_values,
                     reasons_cyclist_comfort, reasons_driver_time_eff, reasons_policymaker_reg_compliance, speed_values, time_values,  xref_deviation_values, xref_deviation_value,
-                    static_x_axis=True, max_time=60):
+                    static_x_axis=True, max_time=20):
     """
     Visualize the simulation frame with an option for static or dynamic x-axis.
 
@@ -851,7 +859,7 @@ def visualize_frame(dt, car_dimensions, bicycle_dimensions, collision_xy, i, mov
 
         # Update ax1 with the car, obstacles, and other related information
         plot_car_and_obstacles(ax1, tmp_trajectory, collision_xy, state, trajectory_res, scenario, moving_obstacles,
-                               simulation, mpc, car_dimensions, bicycle_dimensions, i, dt, historical_plot=True)
+                               simulation, mpc, car_dimensions, bicycle_dimensions, i, dt, historical_plot=False)
 
         # Update ax2 with reasons values over time
         time_value = i * dt  # Time value for current simulation step
