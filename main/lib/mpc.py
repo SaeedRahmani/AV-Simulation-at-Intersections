@@ -135,7 +135,7 @@ def _get_xy_cost_mtx_for_orientation(angle: float):
     ])
 
 
-def _linear_mpc_control(xref, xbar, x0, dref, reaches_end, dt, car_dimensions: CarDimensions):
+def _linear_mpc_control(xref, xbar, x0, dref, reaches_end, dt, car_dimensions: CarDimensions, speed):
     """
     linear mpc control
     xref: reference point
@@ -184,7 +184,7 @@ def _linear_mpc_control(xref, xbar, x0, dref, reaches_end, dt, car_dimensions: C
             constraints += [cvxpy.abs(u[1, t + 1] - u[1, t]) <= MAX_DSTEER * dt]
 
     constraints += [x[:, 0] == x0]
-    constraints += [x[2, :] <= Simulation.MAX_SPEED]
+    constraints += [x[2, :] <= speed]
     constraints += [x[2, :] >= Simulation.MIN_SPEED]
     constraints += [u[0, :] <= MAX_ACCEL]
     constraints += [u[0, :] >= MAX_DECEL]
@@ -208,7 +208,7 @@ def _linear_mpc_control(xref, xbar, x0, dref, reaches_end, dt, car_dimensions: C
     return oa, odelta, ox, oy, oyaw, ov
 
 
-def _iterative_linear_mpc_control(x0, oa, od, state, cx, cy, cyaw, dl, dt, target_ind, car_dimensions: CarDimensions):
+def _iterative_linear_mpc_control(x0, oa, od, state, cx, cy, cyaw, dl, dt, target_ind, car_dimensions: CarDimensions, speed):
     """
     MPC contorl with updating operational point iteraitvely
     :param state:
@@ -229,7 +229,7 @@ def _iterative_linear_mpc_control(x0, oa, od, state, cx, cy, cyaw, dl, dt, targe
         xref, target_ind, dref, reaches_end = _calc_ref_trajectory(state, cx, cy, cyaw, dl, dt, target_ind, ov)
         xbar = _predict_motion(x0, oa, od, xref, car_dimensions=car_dimensions, dt=dt)
         # poa, pod = oa, od
-        oa, od, ox, oy, oyaw, ov = _linear_mpc_control(xref, xbar, x0, dref, reaches_end, dt, car_dimensions)
+        oa, od, ox, oy, oyaw, ov = _linear_mpc_control(xref, xbar, x0, dref, reaches_end, dt, car_dimensions, speed)
         # du = sum(abs(oa - poa)) + sum(abs(od - pod))  # calc u change value
         # if du <= DU_TH:
         #     break
@@ -240,7 +240,7 @@ def _iterative_linear_mpc_control(x0, oa, od, state, cx, cy, cyaw, dl, dt, targe
 
 
 class MPC:
-    def __init__(self, cx: np.ndarray, cy: np.ndarray, cyaw: np.ndarray, dl: float, car_dimensions: CarDimensions,
+    def __init__(self, cx: np.ndarray, cy: np.ndarray, cyaw: np.ndarray, dl: float, speed: float, car_dimensions: CarDimensions,
                  dt: float = 0.2):
         """
         Simulation
@@ -259,6 +259,7 @@ class MPC:
         self.dl = dl
         self.dt = dt
         self.car_dimensions = car_dimensions
+        self.speed = speed
 
         self.goal: Tuple[float, float] = cx[-1], cy[-1]
 
@@ -289,7 +290,7 @@ class MPC:
         self.oa, self.odelta, self.ox, self.oy, self.oyaw, self.ov, self.xref, self.target_ind = \
             _iterative_linear_mpc_control(x0, self.oa, self.odelta, state, self.cx, self.cy,
                                           self.cyaw, self.dl, self.dt, self.target_ind,
-                                          car_dimensions=self.car_dimensions)
+                                          car_dimensions=self.car_dimensions, speed=self.speed)
 
         if self.odelta is not None:
             self.di, self.ai = self.odelta[0], self.oa[0]
