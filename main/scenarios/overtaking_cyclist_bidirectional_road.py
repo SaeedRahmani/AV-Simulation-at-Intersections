@@ -34,7 +34,7 @@ from dataclasses import dataclass
 # Constants
 @dataclass
 class ScenarioParameters:
-    DT = 0.2  # Time step
+    DT = 0.1  # Time step
     CENTERLINE_LOCATION = 0.0  # Centerline location for evaluation
 
 @dataclass
@@ -45,6 +45,7 @@ class ReasonParameters:
 class MPCParameters:
     TIME_HORIZON = 7.0  # Time horizon for predictions
     FRAME_WINDOW = 20  # Frame window for collision checking
+    MAX_SPEED_FREEWAY = 30 / 3.6  # Maximum speed for freeway
 
 @dataclass
 class DriverParameters:
@@ -57,6 +58,7 @@ class CyclistParameters:
     DISTANCE_REF = 8.0  # Reference distance for cyclist patience
     DISTANCE_BUFFER = 1.0  # Buffer distance for cyclist patience
     TIME_THRESHOLD = 5.0  # Time threshold for cyclist patience
+    SPEED = 5 / 3.6 # Cyclist speed [km/h]
 
 # Initialize logging
 import logging
@@ -107,13 +109,16 @@ def main(replanner: bool = False) -> None:
     cost, path, trajectory_full, search_runtime = run_motion_primitive_search(scenario_no_obstacles, car_dimensions,
                                                                               mps)
 
-    # Initialize MPC
-    mpc, state, dl = initialize_mpc(trajectory_full, car_dimensions, max_speed=5/3.6)
+    # Initialize MPC, set max speed to cyclist speed if the AV is following the cyclist
+    if IS_FOLLOWING == True:
+        mpc, state, dl = initialize_mpc(trajectory_full, car_dimensions, max_speed=CyclistParameters.SPEED)
+    else:
+        mpc, state, dl = initialize_mpc(trajectory_full, car_dimensions, max_speed=MPCParameters.MAX_SPEED_FREEWAY)
 
     simulation = HistorySimulation(car_dimensions=car_dimensions, sample_time=ScenarioParameters.DT, initial_state=state)
     history = simulation.history  # gets updated automatically as simulation runs
 
-    # number of index to cut off the trajectory before a collision occurs
+    # Number of index to cut off the trajectory before a collision occurs, change 2 for the larger index cut off
     EXTRA_CUTOFF_MARGIN = 2 * int(
         math.ceil(car_dimensions.radius / dl))  # no. of frames - corresponds approximately to car length
 
@@ -155,6 +160,7 @@ def main(replanner: bool = False) -> None:
                                                       trajs_moving_obstacles,
                                                       frame_window=MPCParameters.FRAME_WINDOW)
 
+        # If replanner is enabled, based on reasons evaluation, determine if a replan is needed
         if replanner == True:
             # Flag to determine if a replan should happen
             replan_needed = False
@@ -168,7 +174,7 @@ def main(replanner: bool = False) -> None:
                 # Perform replan, reset the trajectory, MPC, and collision status
                 IS_FOLLOWING = False
                 # change max_speed of the MPC to 30/3.6
-                collision_xy, mpc, traj_agent_idx, trajectory_full, scenario_obstacles = perform_replan(arterial, car_dimensions, dl, moving_obstacles, mps, state, trajs_moving_obstacles, max_speed=30/3.6, is_following=IS_FOLLOWING)
+                collision_xy, mpc, traj_agent_idx, trajectory_full, scenario_obstacles = perform_replan(arterial, car_dimensions, dl, moving_obstacles, mps, state, trajs_moving_obstacles, max_speed=MPCParameters.MAX_SPEED_FREEWAY, is_following=IS_FOLLOWING)
                 scenario = scenario_obstacles
 
         # Cut off the trajectory before a collision occurs, with an additional margin
@@ -197,7 +203,7 @@ def main(replanner: bool = False) -> None:
                         reasons_cyclist_values, reasons_driver_values, reasons_policymaker_values, distance_values,
                         reasons_cyclist_comfort, reasons_driver_time_eff, reasons_policymaker_reg_compliance,
                         speed_values, time_values, xref_deviation_values, xref_deviation_value,
-                        static_x_axis=True, max_time=20) # static_x_axis=False)
+                        static_x_axis=True, max_time=15) # static_x_axis=False)
 
 
         # Move all obstacles one step ahead
@@ -212,9 +218,9 @@ def main(replanner: bool = False) -> None:
     end_time = time.time()
     loops_total_runtime = sum(loop_runtimes)
     total_runtime = end_time - start_time
-    print('total loops run time is: {}'.format(loops_total_runtime))
-    print('total run time is: {}'.format(total_runtime))
-    print('each mpc runtime is: {}'.format(loops_total_runtime / len(loop_runtimes)))
+    logger.info('total loops run time is: {}'.format(loops_total_runtime))
+    logger.info('total run time is: {}'.format(total_runtime))
+    logger.info('each mpc runtime is: {}'.format(loops_total_runtime / len(loop_runtimes)))
 
     # Visualize final
     visualize_final(simulation.history)
@@ -322,7 +328,7 @@ def perform_replan(arterial, car_dimensions, dl, moving_obstacles, mps, state, t
         av_location_y=state.y,
         is_following=is_following
     )
-    print(f"Initial position: {scenario_obstacles.start}")
+    logger.info(f"Initial position: {scenario_obstacles.start}")
     # Perform motion primitive search
     search = MotionPrimitiveSearch(scenario_obstacles, car_dimensions, mps, margin=car_dimensions.radius)
     cost, path, trajectory_full = search.run(debug=True)
@@ -365,7 +371,7 @@ def reasons_evaluation(reasons_cyclist_comfort, reasons_driver_time_eff, reasons
         if not replan_tracker:
             for reason_name, value in reasons.items():
                 if value < ReasonParameters.REASONS_THRESHOLD:
-                    print(f'Reasons below {ReasonParameters.REASONS_THRESHOLD * 100}%, {reason_name}, Replan')
+                    logger.info(f'Reasons below {ReasonParameters.REASONS_THRESHOLD * 100}%, {reason_name}, Replan')
             replan_tracker = True
             replan_needed = True
     else:
@@ -416,9 +422,9 @@ def initialize_simulation() -> tuple:
 
     # Define moving obstacles
     spawn_location_x = scenario_no_obstacles.start[0] + 1.7
-    spawn_location_y = scenario_no_obstacles.start[1] + 10
+    spawn_location_y = scenario_no_obstacles.start[1] + 8.8
     moving_obstacles = [
-        MovingObstacleArterial(bicycle_dimensions, spawn_location_x, spawn_location_y, 5 / 3.6, True, ScenarioParameters.DT)
+        MovingObstacleArterial(bicycle_dimensions, spawn_location_x, spawn_location_y, speed = CyclistParameters.SPEED, initial_speed = CyclistParameters.SPEED, offset=True, dt=ScenarioParameters.DT)
     ]
 
     return mps, car_dimensions, bicycle_dimensions, arterial, scenario_no_obstacles, scenario_visualization, moving_obstacles
@@ -436,7 +442,7 @@ def initialize_mpc(trajectory_full, car_dimensions, max_speed) -> tuple:
     """
     dl = np.linalg.norm(trajectory_full[0, :2] - trajectory_full[1, :2])
     mpc = MPC(cx=trajectory_full[:, 0], cy=trajectory_full[:, 1], cyaw=trajectory_full[:, 2], dl=dl, dt=ScenarioParameters.DT, car_dimensions=car_dimensions, speed=max_speed)
-    state = State(x=trajectory_full[0, 0], y=trajectory_full[0, 1], yaw=trajectory_full[0, 2], v=0.0)
+    state = State(x=trajectory_full[0, 0], y=trajectory_full[0, 1], yaw=trajectory_full[0, 2], v=CyclistParameters.SPEED)
     return mpc, state, dl
 
 def evaluate_reasons(state, moving_obstacles, car_dimensions, TIME_ELAPSED_DRIVER, TIME_PASSED_CYCLIST) -> tuple:
@@ -574,10 +580,10 @@ def plot_deviation(ax,time_values,  xref_deviation_value):
     fontsize = 25
     ax.clear()
     ax.plot(time_values, xref_deviation_value, "-r", label="Deviation from reference trajectory")
-    ax.grid(True)
+    ax.grid(False)
     ax.set_xlabel("Time [s]", fontsize=fontsize)
     ax.set_ylabel("Deviation [m]", fontsize=fontsize)
-    ax.set_ylim(0, 1)  # Set the y-axis limit
+    ax.set_ylim(0, 0.035)  # Set the y-axis limit
 
 def visualize_final(history: History):
     fontsize = 25
@@ -698,14 +704,18 @@ def finalize_plot(ax, simulation, mpc, i, dt):
 
     # Axis labels and formatting
     ax.set_title(f"Time: {i * dt:.2f} [s]", fontsize=20)
-    ax.set_xlabel('X', fontsize=20)
-    ax.set_ylabel('Y', fontsize=20)
+    # ax.set_xlabel('X', fontsize=20)
+    # ax.set_ylabel('Y', fontsize=20)
     ax.tick_params(axis='both', which='major', labelsize=16)
 
     ax.axis("equal")
     ax.grid(True)
-    ax.set_xlim((-10.5, 10.5))
-    ax.set_ylim((-51, 55))
+    ax.set_xlim((-10, 10))
+    ax.set_ylim((-42, 20))
+
+    # remove xticks and yticks
+    ax.set_xticks([])
+    ax.set_yticks([])
 
 
 def plot_car_and_obstacles(ax, tmp_trajectory, collision_xy, state, trajectory_res, scenario, moving_obstacles,
@@ -752,25 +762,38 @@ def plot_car_and_obstacles(ax, tmp_trajectory, collision_xy, state, trajectory_r
 def plot_reasons(ax, time_values, reasons_policymaker_values, reasons_driver_values, reasons_cyclist_values):
     # Plot reasons values over time
     # Define colors for better balance
-    colors = ['royalblue', 'crimson', 'seagreen']
+    colors = ['dodgerblue', 'darkorange', 'mediumseagreen']
 
     ax.clear()  # Clear the axis for each new update
 
+    '''
     ax.plot(time_values, reasons_policymaker_values, label=r'$R_{policymaker}$', color=colors[0],
-             linestyle='-.', linewidth=2)
-    ax.plot(time_values, reasons_driver_values, label=r'$R_{driver}$', color=colors[1], linestyle='-.',
+             linestyle='--', linewidth=2)
+    ax.plot(time_values, reasons_driver_values, label=r'$R_{driver}$', color=colors[1], linestyle='--',
              linewidth=2)
-    # If you see cyclist reasons intermitten it is because the time_passed is updated every time it is below the threshold.
-    # When it is above threshold, for instance 5, it will decrease. But when the score above threshold again, it becomes 1
-    ax.plot(time_values, reasons_cyclist_values, label=r'$R_{cyclist}$', color=colors[2], linestyle='-.',
+    ax.plot(time_values, reasons_cyclist_values, label=r'$R_{cyclist}$', color=colors[2], linestyle='--',
+             linewidth=2)    
+    '''
+    ax.plot(time_values, reasons_policymaker_values, label=r'Regulatory compliance', color=colors[0],
+             linestyle='--', linewidth=2)
+    ax.plot(time_values, reasons_driver_values, label=r"Driver's patience", color=colors[1], linestyle='--',
              linewidth=2)
+    ax.plot(time_values, reasons_cyclist_values, label=r"Cyclist's comfort", color=colors[2], linestyle='--',
+             linewidth=2)
+
+    ax.axhline(y=ReasonParameters.REASONS_THRESHOLD, color='red', linestyle=':', linewidth=2, label='Replan Threshold')
+    # Annotate the threshold line
+    # Annotate the threshold line with multiple lines of text
+    ax.text(time_values[0] + 0.2, ReasonParameters.REASONS_THRESHOLD + 0.05,
+            "If reasons below \nthreshold, replan",
+            color='red', fontsize=11, verticalalignment='bottom')
 
     ax.set_xlabel('Time [s]', fontsize=25)
     ax.set_ylabel('Reasons [0-1]', fontsize=25)
     # ax.set_title('Reasons Values Over Time', fontsize=20)
     ax.set_ylim([0, 1.1])
-    ax.legend(fontsize=14, loc='lower left')
-    ax.grid(True)
+    ax.legend(fontsize=10, loc='lower left')
+    ax.grid(False)
 
 def plot_velocity(ax, time_values, speed_values):
     # Plot reasons values over time
@@ -789,7 +812,7 @@ def plot_velocity(ax, time_values, speed_values):
     # ax.legend(fontsize=16)
 
     # Enable grid
-    ax.grid(True)
+    ax.grid(False)
 
 def plot_distance(ax, time_values, distance_values, DISTANCE_THRESHOLD_CAR, DISTANCE_THRESHOLD_BICYCLE):
     # Clear the axis for each new update
@@ -848,7 +871,7 @@ def visualize_frame(dt, car_dimensions, bicycle_dimensions, collision_xy, i, mov
 
     if i >= 0:
         # Create figure and grid layout (2 rows, 2 columns)
-        fig = plt.figure(figsize=(8, 10))  # Adjust size for better visualization
+        fig = plt.figure(figsize=(10, 10))  # Adjust size for better visualization
         gs = gridspec.GridSpec(3, 2, height_ratios=[1, 1, 1])  # First row taller
 
         # Create subplots
@@ -940,11 +963,17 @@ if __name__ == '__main__':
 
     # Change to the results folder
     os.chdir(results_folder)
-    print(f"Changed directory to: {os.getcwd()}")
+    logger.info(f"Changed directory to: {os.getcwd()}")
+
+    # Remove the last 15 frames before creating the video
+    # WHY? IN THE LAST FRAMES WE MAKE A STOP, SO IT IS NOT INTERESTING TO SEE
+    frame_files = sorted([f for f in os.listdir(results_folder) if f.startswith('frame_') and f.endswith('.jpg')])
+    for frame_file in frame_files[-30:]:
+        os.remove(os.path.join(results_folder, frame_file))
 
     # Run the ffmpeg command to create a video from frames
     subprocess.run([
-        'ffmpeg', '-framerate', '5', '-i', 'frame_%04d.jpg',
+        'ffmpeg', '-framerate', '10', '-i', 'frame_%04d.jpg',
         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', 'output_video.mp4'
     ])
 

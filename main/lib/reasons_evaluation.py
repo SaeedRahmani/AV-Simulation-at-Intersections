@@ -1,6 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# Initialize logging
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 def evaluate_distance_to_obstacle(distance_buffer, distance_threshold, moving_obstacles,state):
     distance_to_car = np.linalg.norm(
         [moving_obstacles[0].get()[0] - state.x, moving_obstacles[0].get()[1] - state.y])
@@ -19,7 +24,7 @@ def evaluate_time_following(reasons, DT, distance_buffer, distance_threshold, ti
         if distance_to_obstacle < (distance_threshold + distance_buffer):
             time_passed += DT
             # print(time_passed)
-            # print('time passed driver is: {}'.format(time_passed))
+            # logger.info('time passed driver is: {}'.format(time_passed))
             # print('distance to bicycle is: {}'.format(distance_to_obstacle))
             if time_passed >= time_threshold:
                 reasons_driver = 1 / np.exp(0.2 * (time_passed - time_threshold))
@@ -35,7 +40,7 @@ def evaluate_time_following(reasons, DT, distance_buffer, distance_threshold, ti
             [moving_obstacles[0].get()[0] - state.x, moving_obstacles[0].get()[1] - state.y])
         if distance_to_car < (distance_threshold + distance_buffer):
             time_passed += DT
-            print('time passed cyclist is: {}'.format(time_passed))
+            # logger.info('time passed cyclist is: {}'.format(time_passed))
             # print('distance to bicycle is: {}'.format(distance_to_obstacle))
             if time_passed >= time_threshold:
                 reasons_cyclist = 1 / np.exp(0.2 * (time_passed - time_threshold))

@@ -17,7 +17,7 @@ class ArterialMultiLanes:
         self.goal_lane = goal_lane
         self.width_road = 3
         self.width_pavement = 4
-        self.length = 50
+        self.length = 80
         self.allowed_goal_theta_difference = np.pi / 16
         self.goal_lane_adjustment = goal_lane - 1
 
@@ -50,15 +50,17 @@ class ArterialMultiLanes:
         goal = (lane_offset, self.length / 2, np.pi/2)
 
         car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
-        goal_area = BoxObstacle(xy_width=(car_dimensions.bounding_box_size[0], car_dimensions.bounding_box_size[1]), height=1, xy_center=(goal[0], goal[1]))
+        adjustment_x_goal = 0.3 # to adjust the goal area to be centered at the goal point
+        goal_area = BoxObstacle(xy_width=(car_dimensions.bounding_box_size[0], car_dimensions.bounding_box_size[1]), height=1, xy_center=(goal[0] + adjustment_x_goal, goal[1]))
 
         # TO SET GOAL AREA AS A BOX
         # goal_area = BoxObstacle(xy_width=(self.width_road, self.width_road), height=1, xy_center=(goal[0], goal[1]))
 
         if frame_visualization is True:
+            length_pavement_adjustment = 5
             obstacles = [
-                BoxObstacle(xy_width=(self.width_pavement, self.length), height=1, xy_center=(left_pavement, 0)), # left pavement
-                BoxObstacle(xy_width=(self.width_pavement, self.length), height=0.1, xy_center=(right_pavement, 0))] # right pavement
+                BoxObstacle(xy_width=(self.width_pavement, self.length + length_pavement_adjustment), height=1, xy_center=(left_pavement, 0)), # left pavement
+                BoxObstacle(xy_width=(self.width_pavement, self.length + length_pavement_adjustment), height=0.1, xy_center=(right_pavement, 0))] # right pavement
         else:
             if moving_obstacles is True and is_following is False:
                 start = (av_location_x, av_location_y, np.pi / 2)
