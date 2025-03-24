@@ -16,18 +16,18 @@ import numpy as np
 
 # Local modules
 sys.path.append('..')
-from main.envs.arterial_multi_lanes import ArterialMultiLanes
-from main.lib.car_dimensions import CarDimensions, BicycleModelDimensions, BicycleRealDimensions
-from main.lib.collision_avoidance import get_cutoff_curve_by_position_idx, check_collision_moving_bicycle
-from main.lib.motion_primitive import load_motion_primitives
-from main.lib.motion_primitive_search_modified import MotionPrimitiveSearch
-from main.lib.moving_obstacles import MovingObstacleArterial
-from main.lib.moving_obstacles_prediction import MovingObstaclesPrediction
-from main.lib.mpc import MPC, MAX_ACCEL
-from main.lib.plotting import draw_car, draw_bicycle, draw_astar_search_points
-from main.lib.reasons_evaluation import evaluate_distance_to_centerline, evaluate_distance_to_obstacle, evaluate_time_following
-from main.lib.simulation import History, HistorySimulation, Simulation, State
-from main.lib.trajectories import calc_nearest_index_in_direction, resample_curve
+from envs.arterial_multi_lanes import ArterialMultiLanes
+from lib.car_dimensions import CarDimensions, BicycleModelDimensions, BicycleRealDimensions
+from lib.collision_avoidance import get_cutoff_curve_by_position_idx, check_collision_moving_bicycle
+from lib.motion_primitive import load_motion_primitives
+from lib.motion_primitive_search_modified import MotionPrimitiveSearch
+from lib.moving_obstacles import MovingObstacleArterial
+from lib.moving_obstacles_prediction import MovingObstaclesPrediction
+from lib.mpc import MPC, MAX_ACCEL
+from lib.plotting import draw_car, draw_bicycle, draw_astar_search_points
+from lib.reasons_evaluation import evaluate_distance_to_centerline, evaluate_distance_to_obstacle, evaluate_time_following
+from lib.simulation import History, HistorySimulation, Simulation, State
+from lib.trajectories import calc_nearest_index_in_direction, resample_curve
 
 from dataclasses import dataclass
 

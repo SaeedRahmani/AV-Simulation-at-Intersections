@@ -6,10 +6,10 @@ sys.path.append('..')
 
 import numpy as np
 from matplotlib import pyplot as plt
-from main.lib.obstacles import BoxObstacle
-from main.lib.scenario import Scenario
-from main.lib.plot_obstacles import plot_intersection
-from main.lib.car_dimensions import CarDimensions, BicycleModelDimensions
+from lib.obstacles import BoxObstacle
+from lib.scenario import Scenario
+from lib.plot_obstacles import plot_intersection
+from lib.car_dimensions import CarDimensions, BicycleModelDimensions
 
 class ArterialMultiLanes:
     def __init__(self, num_lanes=2, goal_lane=1):
