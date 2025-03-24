@@ -20,7 +20,7 @@ from envs.arterial_multi_lanes import ArterialMultiLanes
 from lib.car_dimensions import CarDimensions, BicycleModelDimensions, BicycleRealDimensions
 from lib.collision_avoidance import get_cutoff_curve_by_position_idx, check_collision_moving_bicycle
 from lib.motion_primitive import load_motion_primitives
-from lib.motion_primitive_search_modified import MotionPrimitiveSearch
+from lib.motion_primitive_search_multi_lane import MotionPrimitiveSearch
 from lib.moving_obstacles import MovingObstacleArterial
 from lib.moving_obstacles_prediction import MovingObstaclesPrediction
 from lib.mpc import MPC, MAX_ACCEL
