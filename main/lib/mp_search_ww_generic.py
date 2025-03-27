@@ -1,3 +1,9 @@
+'''
+This is the motion primitive search that is a more generic version comapred to
+mp_search.py because it also includes some weights to change the heuristic and 
+true cost functions in the A* search algorithm.
+'''
+
 import sys
 sys.path.append('..')
 

@@ -2,14 +2,14 @@ from typing import Dict, Tuple, List, Iterable
 
 import numpy as np
 
-from main.lib.a_star import AStar
-from main.lib.car_dimensions import CarDimensions
-from main.lib.linalg import create_2d_transform_mtx, transform_2d_pts
-from main.lib.maths import normalize_angle
-from main.lib.motion_primitive import MotionPrimitive
-from main.lib.obstacles import check_collision
-from main.lib.scenario import Scenario
-from main.lib.trajectories import car_trajectory_to_collision_point_trajectories, resample_curve
+from lib.a_star import AStar
+from lib.car_dimensions import CarDimensions
+from lib.linalg import create_2d_transform_mtx, transform_2d_pts
+from lib.maths import normalize_angle
+from lib.motion_primitive import MotionPrimitive
+from lib.obstacles import check_collision
+from lib.scenario import Scenario
+from lib.trajectories import car_trajectory_to_collision_point_trajectories, resample_curve
 
 NodeType = Tuple[float, float, float]
 

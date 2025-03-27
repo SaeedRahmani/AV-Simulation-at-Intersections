@@ -4,8 +4,8 @@ sys.path.append('..')
 import numpy as np
 from matplotlib import pyplot as plt
 
-from main.lib.obstacles import BoxObstacle, CircleObstaclels
-from main.lib.scenario import Scenario
+from lib.obstacles import BoxObstacle, CircleObstaclels
+from lib.scenario import Scenario
 
 def free_area(test_no = 1, angle: float = 0.0, start_pos: float = 0.0, goal_distance = 20, acceptable_error = np.pi / 16) -> Scenario:
     allowed_goal_theta_difference = acceptable_error

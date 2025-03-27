@@ -2,6 +2,13 @@
 
 This project is a comprehensive collection of scripts and modules related to motion primitives and A* search algorithms. It provides a robust framework for creating and visualizing motion primitives for different vehicle models, and includes a variety of scenarios and environments for testing and development.
 
+## packages
+numpy
+matplotlib
+cvxpy
+
+brew install ffmpeg
+
 ## Project Structure
 
 - `main/`: This directory contains the core scripts and modules of the project.

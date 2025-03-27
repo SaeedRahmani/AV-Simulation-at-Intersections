@@ -2,7 +2,7 @@ import math
 import unittest
 from typing import Tuple, Iterable
 
-from main.lib.a_star import AStar
+from lib.a_star import AStar
 
 
 def dummy_heuristic(node):

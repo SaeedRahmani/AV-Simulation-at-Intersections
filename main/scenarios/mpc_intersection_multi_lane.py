@@ -13,7 +13,7 @@ from lib.car_dimensions import CarDimensions, BicycleModelDimensions
 from lib.collision_avoidance import check_collision_moving_cars, get_cutoff_curve_by_position_idx
 from lib.motion_primitive import load_motion_primitives
 # from lib.motion_primitive_search import MotionPrimitiveSearch
-from lib.motion_primitive_search_modified import MotionPrimitiveSearch
+from lib.mp_search_ww_generic import MotionPrimitiveSearch
 from lib.moving_obstacles import MovingObstacleTIntersection
 from lib.moving_obstacles_prediction import MovingObstaclesPrediction
 from lib.mpc import MPC, MAX_ACCEL

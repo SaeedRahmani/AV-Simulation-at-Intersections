@@ -7,7 +7,7 @@ sys.path.append('..')
 from envs.intersection_multi_lanes import intersection
 from lib.car_dimensions import BicycleModelDimensions, CarDimensions
 from lib.motion_primitive import load_motion_primitives
-from lib.motion_primitive_search_multi_lane import MotionPrimitiveSearch
+from lib.mp_search_ww_generic import MotionPrimitiveSearch
 from lib.plotting import draw_scenario, draw_astar_search_points
 
 def measure_time(func):

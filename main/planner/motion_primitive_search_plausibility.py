@@ -10,7 +10,7 @@ from lib.car_dimensions import BicycleModelDimensions, CarDimensions
 from lib.helpers import measure_time
 from lib.motion_primitive import load_motion_primitives
 #from lib.motion_primitive_search import MotionPrimitiveSearch
-from lib.motion_primitive_search_modified import MotionPrimitiveSearch
+from lib.mp_search import MotionPrimitiveSearch
 from lib.plotting import draw_scenario, draw_astar_search_points
 
 if __name__ == '__main__':
