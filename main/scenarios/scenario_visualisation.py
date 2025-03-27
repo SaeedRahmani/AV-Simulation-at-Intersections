@@ -9,7 +9,7 @@ sys.path.append('..')
 from envs.t_intersection import t_intersection
 from lib.car_dimensions import BicycleModelDimensions, CarDimensions
 from lib.motion_primitive import load_motion_primitives
-from lib.motion_primitive_search import MotionPrimitiveSearch
+from lib.mp_search import MotionPrimitiveSearch
 from lib.plotting import draw_scenario, draw_astar_search_points
 from lib.moving_obstacles import MovingObstacleTIntersection
 from lib.visualisation import create_animation

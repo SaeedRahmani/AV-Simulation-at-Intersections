@@ -13,7 +13,7 @@ from lib.car_dimensions import CarDimensions, BicycleModelDimensions
 from lib.collision_avoidance import check_collision_moving_cars, get_cutoff_curve_by_position_idx
 from lib.motion_primitive import load_motion_primitives
 # from lib.motion_primitive_search import MotionPrimitiveSearch
-from lib.motion_primitive_search_modified import MotionPrimitiveSearch
+from lib.mp_search_ww_generic import MotionPrimitiveSearch
 from lib.moving_obstacles import MovingObstacleTIntersection
 from lib.moving_obstacles_prediction import MovingObstaclesPrediction
 from lib.mpc import MPC, MAX_ACCEL
@@ -32,7 +32,7 @@ def main():
     mps = load_motion_primitives(version='bicycle_model')
     car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
 
-    start_pos = 4
+    start_pos = 1
     turn_indicator = 1
     scenario = intersection(start_pos=start_pos, turn_indicator=turn_indicator)
     # scenario = t_intersection(turn_left=True)
@@ -69,7 +69,7 @@ def main():
     dl = np.linalg.norm(trajectory_full[0, :2] - trajectory_full[1, :2])
 
     mpc = MPC(cx=trajectory_full[:, 0], cy=trajectory_full[:, 1], cyaw=trajectory_full[:, 2], dl=dl, dt=DT,
-              car_dimensions=car_dimensions)
+              car_dimensions=car_dimensions, speed=30/3.6)
     state = State(x=trajectory_full[0, 0], y=trajectory_full[0, 1], yaw=trajectory_full[0, 2], v=0.0)
 
     simulation = HistorySimulation(car_dimensions=car_dimensions, sample_time=DT, initial_state=state)
@@ -79,7 +79,7 @@ def main():
     # SIMULATE
     #########
     TIME_HORIZON = 7.
-    FRAME_WINDOW = 20
+    FRAME_WINDOW = 10
     EXTRA_CUTOFF_MARGIN = 4 * int(
         math.ceil(car_dimensions.radius / dl))  # no. of frames - corresponds approximately to car length
 

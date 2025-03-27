@@ -20,7 +20,7 @@ from envs.arterial_multi_lanes import ArterialMultiLanes
 from lib.car_dimensions import CarDimensions, BicycleModelDimensions, BicycleRealDimensions
 from lib.collision_avoidance import get_cutoff_curve_by_position_idx, check_collision_moving_bicycle
 from lib.motion_primitive import load_motion_primitives
-from lib.motion_primitive_search_multi_lane import MotionPrimitiveSearch
+from lib.mp_search_ww_generic import MotionPrimitiveSearch
 from lib.moving_obstacles import MovingObstacleArterial
 from lib.moving_obstacles_prediction import MovingObstaclesPrediction
 from lib.mpc import MPC, MAX_ACCEL
@@ -973,7 +973,7 @@ if __name__ == '__main__':
 
     # Run the ffmpeg command to create a video from frames
     subprocess.run([
-        'ffmpeg', '-framerate', '10', '-i', 'frame_%04d.jpg',
+        'ffmpeg', '-framerate', '5', '-i', 'frame_%04d.jpg',
         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', 'output_video.mp4'
     ])
 

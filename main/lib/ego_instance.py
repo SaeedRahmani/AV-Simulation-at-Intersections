@@ -5,7 +5,7 @@ from lib.simulation import Simulation, History, HistorySimulation  # Import the 
 from lib.mpc import MPC, MAX_ACCEL
 from lib.collision_avoidance import check_collision_moving_cars, get_cutoff_curve_by_position_idx  # Import the collision functions
 from envs.intersection import intersection  # Import the intersection function from the intersection module
-from lib.motion_primitive_search_modified import MotionPrimitiveSearch  # Import MotionPrimitiveSearch from the appropriate module
+from lib.mp_search import MotionPrimitiveSearch  # Import MotionPrimitiveSearch from the appropriate module
 from lib.other_agents_prediction import OtherAgentsPrediction  # Import MovingObstaclesPrediction from the appropriate module
 from envs.intersection import intersection
 

@@ -240,8 +240,8 @@ def _iterative_linear_mpc_control(x0, oa, od, state, cx, cy, cyaw, dl, dt, targe
 
 
 class MPC:
-    def __init__(self, cx: np.ndarray, cy: np.ndarray, cyaw: np.ndarray, dl: float, speed: float, car_dimensions: CarDimensions,
-                 dt: float = 0.2):
+    def __init__(self, cx: np.ndarray, cy: np.ndarray, cyaw: np.ndarray, dl: float, car_dimensions: CarDimensions,
+                 speed: float = 30/3.6, dt: float = 0.2):
         """
         Simulation
         cx: course x position list

@@ -10,7 +10,7 @@ from lib.a_star import AStar
 from lib.car_dimensions import CarDimensions
 from lib.linalg import create_2d_transform_mtx, transform_2d_pts
 from lib.motion_primitive import MotionPrimitive
-from lib.motion_primitive_search import MotionPrimitiveSearch
+from lib.mp_search import MotionPrimitiveSearch
 from lib.scenario import Scenario
 
 
