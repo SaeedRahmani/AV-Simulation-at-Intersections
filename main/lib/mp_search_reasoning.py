@@ -325,7 +325,7 @@ if __name__ == '__main__':
         wh_ego=[1.0, 3.0], wh_policy=[2.7], wh_rUser1=[15]
     )
 
-    draw_scenario(scenario, mps, car_dimensions, search, ax, draw_obstacles=True, draw_goal=True, draw_car=True)
+    draw_scenario(scenario, mps, car_dimensions, search, ax, draw_obstacles=True, draw_goal=True, draw_car=True, draw_mps= False, draw_mps2=False, draw_collision_checking=False, draw_car2=False)
 
     solutions = search.run_all(debug=True)
 
