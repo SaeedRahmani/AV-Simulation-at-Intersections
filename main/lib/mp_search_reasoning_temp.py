@@ -356,7 +356,7 @@ class MotionPrimitiveSearch:
         
         return min(scaled_cost, 1.0)  # Cap at 1.0 to be safe
 
-    def compute_driver_patience(self, distance_to_moving_obstacles):
+    def compute_ego_patience(self, distance_to_moving_obstacles):
         """
         Calculate driver impatience based on time spent too close to cyclist.
         Normalized to return values between 0 and 1.
@@ -437,7 +437,8 @@ class MotionPrimitiveSearch:
             # === Reasoning Components ===
             
             # Ego-related costs (efficiency and patience)
-            ego_cost = self._wh_ego_efficiency_reason * normalized_distance_xy + self._wh_ego_patience_reason * driver_patience
+            ego_patience = self.compute_ego_patience(distance_to_rUser1)
+            ego_cost = self._wh_ego_efficiency_reason * normalized_distance_xy + self._wh_ego_patience_reason * ego_patience
             
             # Policy-related costs (centerline deviation)
             centerline_deviation = self.compute_centerline_deviation_cost(x)
@@ -455,7 +456,7 @@ class MotionPrimitiveSearch:
         else:
             # If no moving obstacles, use simpler cost structure
             # Ego-related costs (efficiency and patience)
-            ego_cost = self._wh_ego_efficiency_reason * normalized_distance_xy + self._wh_ego_patience_reason * driver_patience
+            ego_cost = self._wh_ego_efficiency_reason * normalized_distance_xy + self._wh_ego_patience_reason * ego_patience
             
             # Policy-related costs (centerline deviation)
             centerline_deviation = self.compute_centerline_deviation_cost(x)
