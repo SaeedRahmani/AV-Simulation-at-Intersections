@@ -408,7 +408,7 @@ class MotionPrimitiveSearch:
         goal_x, goal_y, goal_orientation = self._goal_point
         
         # Calculate basic components
-        # distance_xy = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
+        distance_xy = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
         normalized_distance_xy = self.normalize_distance_to_goal(x, y, goal_x, goal_y)
         distance_theta = min(abs(theta - goal_orientation), abs(theta - goal_orientation) - self._allowed_goal_theta_difference/2)
         steering_change_cost = self.calculate_steering_change_cost(node, self._goal_point, steering_angle_weight=1.0)
@@ -456,12 +456,14 @@ class MotionPrimitiveSearch:
         else:
             # If no moving obstacles, use simpler cost structure
             # Ego-related costs (efficiency and patience)
-            ego_cost = self._wh_ego_efficiency_reason * normalized_distance_xy
+            ego_cost = (
+                        self._wh_dist2goal * distance_xy + 
+                          self._wh_dist2obs * obstacle_avoidance_cost +
+                            self._wh_dist2center * distance_from_center
+                        )
             
-            # Policy-related costs (centerline deviation)
-            centerline_deviation = self.compute_centerline_deviation_cost(x)
-            policy_cost = self._wh_policymaker_rightlane_reason * centerline_deviation
-            
+            # Policy-related costs (centerline deviation)            
+            policy_cost = 0.0
             rUser1_cost = 0.0
             rUser2_cost = 0.0
             rUser3_cost = 0.0
