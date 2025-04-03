@@ -456,6 +456,7 @@ class MotionPrimitiveSearch:
         else:
             # If no moving obstacles, use simpler cost structure
             # Ego-related costs (efficiency and patience)
+            ego_patience = self.compute_ego_patience(distance_to_rUser1)
             ego_cost = self._wh_ego_efficiency_reason * normalized_distance_xy + self._wh_ego_patience_reason * ego_patience
             
             # Policy-related costs (centerline deviation)
