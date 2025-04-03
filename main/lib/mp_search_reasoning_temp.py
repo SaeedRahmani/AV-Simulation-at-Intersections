@@ -47,9 +47,11 @@ class MotionPrimitiveSearch:
                  wh_dist2obs: float = 0.0, 
                  wh_dist2center: float = 0.0,
                  # Reasoning-specific weights (from mp_search_ww_generic_reasons.py)
-                 wh_policymaker_rightlane_reason: float = 0.25, 
-                 wh_cyclist_comfort_reason: float = 0.25, 
-                 wh_driver_patience_reason: float = 0.25,
+                 wh_ego_patience_reason: float = 0.5,
+                 wh_ego_efficiency_reason: float = 0.5,
+                 wh_policymaker_rightlane_reason: float = 1.0, 
+                 wh_rUser1_comfort_reason: float = 1.0, 
+                 
                  # Weights for the real cost function
                  wc_dist: float = 1.0, 
                  wc_steering: float = 5.0, 
@@ -72,9 +74,9 @@ class MotionPrimitiveSearch:
         self._a_star: AStar[NodeType] = AStar(neighbor_function=self.neighbor_function)
         
         # Initialize high-level reasoning weights (as lists for multiple trajectory generation)
-        self._wh_ego_list = wh_ego if wh_ego else [0.25]
-        self._wh_policy_list = wh_policy if wh_policy else [0.31]
-        self._wh_rUser1_list = wh_rUser1 if wh_rUser1 else [0.44]
+        self._wh_ego_list = wh_ego if wh_ego else [0.33]
+        self._wh_policy_list = wh_policy if wh_policy else [0.34]
+        self._wh_rUser1_list = wh_rUser1 if wh_rUser1 else [0.33]
         self._wh_rUser2_list = wh_rUser2 if wh_rUser2 else [0.0]
         self._wh_rUser3_list = wh_rUser3 if wh_rUser3 else [0.0]
         
@@ -94,8 +96,9 @@ class MotionPrimitiveSearch:
         
         # Reasoning-specific weights
         self._wh_policymaker_rightlane_reason = wh_policymaker_rightlane_reason
-        self._wh_cyclist_comfort_reason = wh_cyclist_comfort_reason
-        self._wh_driver_patience_reason = wh_driver_patience_reason
+        self._wh_rUser1_comfort_reason = wh_rUser1_comfort_reason
+        self._wh_ego_patience_reason = wh_ego_patience_reason
+        self._wh_ego_efficiency_reason = wh_ego_efficiency_reason
 
         # Weights for the real cost function
         self._wc_dist = wc_dist
@@ -208,7 +211,7 @@ class MotionPrimitiveSearch:
                                self._wh_rUser2_list, self._wh_rUser3_list)
         for wh_ego, wh_policy, wh_rUser1, wh_rUser2, wh_rUser3 in combinations:
             # Reset proximity tracking for each run
-            self._close_proximity_time = 0.0
+            self._close_proximity_time = 0.0 # how long the vehicle has been in close proximity to a cyclist or other road user
             
             # Update current weights
             self._current_wh_ego = wh_ego
@@ -405,7 +408,7 @@ class MotionPrimitiveSearch:
         goal_x, goal_y, goal_orientation = self._goal_point
         
         # Calculate basic components
-        distance_xy = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
+        # distance_xy = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
         normalized_distance_xy = self.normalize_distance_to_goal(x, y, goal_x, goal_y)
         distance_theta = min(abs(theta - goal_orientation), abs(theta - goal_orientation) - self._allowed_goal_theta_difference/2)
         steering_change_cost = self.calculate_steering_change_cost(node, self._goal_point, steering_angle_weight=1.0)
@@ -424,56 +427,51 @@ class MotionPrimitiveSearch:
         if self._moving_obstacles_state is not None:
             # Update bicycle position (project forward)
             # Projected bicycle forward, s = v * t
-            projected_bicycle_x = self._moving_obstacles_state[0]
-            projected_bicycle_y = self._moving_obstacles_state[1] + self._moving_obstacles_state[2] * self._mps['straight'].n_seconds
+            projected_rUser1_x = self._moving_obstacles_state[0]
+            projected_rUser1_y = self._moving_obstacles_state[1] + self._moving_obstacles_state[2] * self._mps['straight'].n_seconds
             
             # Calculate the distance between the current node and the moving obstacles
-            distance_to_moving_obstacles = np.linalg.norm(
-                [x - projected_bicycle_x, y - projected_bicycle_y])
+            distance_to_rUser1 = np.linalg.norm(
+                [x - projected_rUser1_x, y - projected_rUser1_y])
 
             # === Reasoning Components ===
             
-            # Ego-related costs (distance to goal, orientation difference, steering)
-            ego_cost = (self._wh_dist2goal * normalized_distance_xy + 
-                       self._wh_theta2goal * distance_theta + 
-                       self._wh_steer2goal * steering_change_cost)
+            # Ego-related costs (efficiency and patience)
+            ego_cost = self._wh_ego_efficiency_reason * normalized_distance_xy + self._wh_ego_patience_reason * driver_patience
             
-            # Policy-related costs (obstacle avoidance, centerline deviation)
+            # Policy-related costs (centerline deviation)
             centerline_deviation = self.compute_centerline_deviation_cost(x)
-            policy_cost = (self._wh_dist2obs * obstacle_avoidance_cost +
-                          self._wh_policymaker_rightlane_reason * centerline_deviation)
+            policy_cost = self._wh_policymaker_rightlane_reason * centerline_deviation
             
             # Road User 1 (Cyclist) costs - comfort based on distance and time
-            cyclist_distance_comfort = self.compute_bicycle_distance_cost(distance_to_moving_obstacles)
-            cyclist_time_comfort = self.compute_bicycle_time_cost(distance_to_moving_obstacles)
+            cyclist_distance_comfort = self.compute_bicycle_distance_cost(distance_to_rUser1)
+            cyclist_time_comfort = self.compute_bicycle_time_cost(distance_to_rUser1)
             cyclist_total_comfort = cyclist_distance_comfort * cyclist_time_comfort
-            rUser1_cost = self._wh_cyclist_comfort_reason * cyclist_total_comfort
+            rUser1_cost = self._wh_rUser1_comfort_reason * cyclist_total_comfort
             
-            # Road User 2 (Driver) costs - patience
-            driver_patience = self.compute_driver_patience(distance_to_moving_obstacles)
-            rUser2_cost = self._wh_driver_patience_reason * driver_patience
-            
-            # Road User 3 costs (can be expanded in the future)
+            # Road User 2 and 3 costs (can be expanded in the future)
+            rUser2_cost = 0.0
             rUser3_cost = 0.0
         else:
             # If no moving obstacles, use simpler cost structure
-            ego_cost = (self._wh_dist2goal * normalized_distance_xy + 
-                       self._wh_theta2goal * distance_theta + 
-                       self._wh_steer2goal * steering_change_cost)
+            # Ego-related costs (efficiency and patience)
+            ego_cost = self._wh_ego_efficiency_reason * normalized_distance_xy + self._wh_ego_patience_reason * driver_patience
             
-            policy_cost = self._wh_dist2obs * obstacle_avoidance_cost
+            # Policy-related costs (centerline deviation)
+            centerline_deviation = self.compute_centerline_deviation_cost(x)
+            policy_cost = self._wh_policymaker_rightlane_reason * centerline_deviation
             
-            rUser1_cost = self._wh_dist2center * distance_from_center
-            
+            rUser1_cost = 0.0
             rUser2_cost = 0.0
             rUser3_cost = 0.0
         
         # Combine with high-level weights
+        GLOBAL_SCALE = 200.0 
         heuristic_cost = (self._current_wh_ego * ego_cost +
                          self._current_wh_policy * policy_cost +
                          self._current_wh_rUser1 * rUser1_cost +
                          self._current_wh_rUser2 * rUser2_cost +
-                         self._current_wh_rUser3 * rUser3_cost)
+                         self._current_wh_rUser3 * rUser3_cost) * GLOBAL_SCALE
         
         return heuristic_cost
 
