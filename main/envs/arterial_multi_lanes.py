@@ -9,7 +9,9 @@ from matplotlib import pyplot as plt
 from lib.obstacles import BoxObstacle
 from lib.scenario import Scenario
 from lib.plot_obstacles import plot_intersection
+from lib.parameters import ScenarioParameters
 from lib.car_dimensions import CarDimensions, BicycleModelDimensions
+
 
 class ArterialMultiLanes:
     def __init__(self, num_lanes=2, goal_lane=1):
@@ -17,7 +19,7 @@ class ArterialMultiLanes:
         self.goal_lane = goal_lane
         self.width_road = 3
         self.width_pavement = 4
-        self.length = 80
+        self.length = ScenarioParameters.LENGTH
         self.allowed_goal_theta_difference = np.pi / 16
         self.goal_lane_adjustment = goal_lane - 1
 
@@ -50,7 +52,7 @@ class ArterialMultiLanes:
         goal = (lane_offset, self.length / 2, np.pi/2)
 
         car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
-        adjustment_x_goal = 0.3 # to adjust the goal area to be centered at the goal point
+        adjustment_x_goal = 0.30 # to adjust the goal area to be centered at the goal point
         goal_area = BoxObstacle(xy_width=(car_dimensions.bounding_box_size[0], car_dimensions.bounding_box_size[1]), height=1, xy_center=(goal[0] + adjustment_x_goal, goal[1]))
 
         # TO SET GOAL AREA AS A BOX
