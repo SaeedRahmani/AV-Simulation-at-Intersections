@@ -14,9 +14,11 @@ from matplotlib import pyplot as plt
 import matplotlib.lines as mlines
 
 from envs.intersection_multi_lanes import intersection
+from envs.arterial_multi_lanes import ArterialMultiLanes
 from lib.car_dimensions import BicycleModelDimensions, CarDimensions
 from lib.helpers import measure_time
 from lib.motion_primitive import load_motion_primitives
+from lib.parameters import ScenarioParameters
 from lib.plotting import draw_scenario
 from lib.a_star import AStar
 from lib.linalg import create_2d_transform_mtx, transform_2d_pts
@@ -47,11 +49,15 @@ class MotionPrimitiveSearch:
                  wh_dist2obs: float = 0.0, 
                  wh_dist2center: float = 0.0,
                  # Reasoning-specific weights (from mp_search_ww_generic_reasons.py)
-                 wh_ego_patience_reason: float = 0.5,
-                 wh_ego_efficiency_reason: float = 0.5,
+                 wh_ego_patience_reason: float = 0.25,
+                 wh_ego_efficiency_reason: float = 0.25,
+                 wh_ego_human_like_reason: float = 0.25,
+                 wh_ego_goal_reason: float = 0.25,
                  wh_policymaker_rightlane_reason: float = 1.0, 
-                 wh_rUser1_comfort_reason: float = 1.0, 
-                 
+                 wh_rUser1_comfort_reason: float = 1.0,
+                 # Time tracking for proximity calculations
+                 driver_elapsed_time: float = 0.0,
+                 cyclist_elapsed_time: float = 0.0,
                  # Weights for the real cost function
                  wc_dist: float = 1.0, 
                  wc_steering: float = 5.0, 
@@ -74,11 +80,11 @@ class MotionPrimitiveSearch:
         self._a_star: AStar[NodeType] = AStar(neighbor_function=self.neighbor_function)
         
         # Initialize high-level reasoning weights (as lists for multiple trajectory generation)
-        self._wh_ego_list = wh_ego if wh_ego else [0.33]
-        self._wh_policy_list = wh_policy if wh_policy else [0.34]
-        self._wh_rUser1_list = wh_rUser1 if wh_rUser1 else [0.33]
-        self._wh_rUser2_list = wh_rUser2 if wh_rUser2 else [0.0]
-        self._wh_rUser3_list = wh_rUser3 if wh_rUser3 else [0.0]
+        self._wh_ego_list = wh_ego if wh_ego else [0.5, 0.0, 0.5]
+        self._wh_policy_list = wh_policy if wh_policy else [0.5, 0.5, 0.0]
+        self._wh_rUser1_list = wh_rUser1 if wh_rUser1 else [0.0, 0.5, 0.5]
+        self._wh_rUser2_list = wh_rUser2 if wh_rUser2 else [0.0, 0.0, 0.0]
+        self._wh_rUser3_list = wh_rUser3 if wh_rUser3 else [0.0, 0.0, 0.0]
         
         # Initialize the current weights (will be updated during run_all)
         self._current_wh_ego = self._wh_ego_list[0]
@@ -99,6 +105,8 @@ class MotionPrimitiveSearch:
         self._wh_rUser1_comfort_reason = wh_rUser1_comfort_reason
         self._wh_ego_patience_reason = wh_ego_patience_reason
         self._wh_ego_efficiency_reason = wh_ego_efficiency_reason
+        self._wh_ego_human_like_reasons = wh_ego_human_like_reason
+        self._wh_ego_goal_reason = wh_ego_goal_reason
 
         # Weights for the real cost function
         self._wc_dist = wc_dist
@@ -109,8 +117,9 @@ class MotionPrimitiveSearch:
         # For each motion primitive, create collision points
         self._mp_collision_points: Dict[str, np.ndarray] = self._create_collision_points()
         
-        # Initialize proximity tracking (for time-based reasoning)
-        self._close_proximity_time = 0.0
+        # Initialize proximity tracking using passed values instead of resetting to 0
+        self._driver_proximity_time = driver_elapsed_time
+        self._cyclist_proximity_time = cyclist_elapsed_time
 
     def _create_collision_points(self) -> Dict[str, np.ndarray]:
         MIN_DISTANCE_BETWEEN_POINTS = self._car_dimensions.radius
@@ -206,12 +215,57 @@ class MotionPrimitiveSearch:
         return cost, path, trajectory
 
     def run_all(self, debug=False):
+        """
+        Run the A* search with combinations of weights from the initialized lists.
+        
+        Each combination takes one value from each list at the same index.
+        The combinations represent different prioritizations (the values are based on the initialization lists):
+        1. [0.6, 0.1, 0.3, 0.0, 0.0] - Ego priority
+        2. [0.3, 0.6, 0.1, 0.0, 0.0] - Policy priority
+        3. [0.1, 0.3, 0.6, 0.0, 0.0] - rUser1 priority
+        4. [0.2, 0.4, 0.4, 0.0, 0.0] - Policy & rUser1 balance
+        5. [0.4, 0.2, 0.4, 0.0, 0.0] - Ego & rUser1 balance
+        6. [0.33, 0.33, 0.34, 0.0, 0.0] - Equal balance
+        
+        Args:
+            debug: Whether to collect debug data during search
+            
+        Returns:
+            tuple: Lists of costs, paths, and trajectories for all combinations
+        """
         trajectories = []
-        combinations = product(self._wh_ego_list, self._wh_policy_list, self._wh_rUser1_list,
-                               self._wh_rUser2_list, self._wh_rUser3_list)
-        for wh_ego, wh_policy, wh_rUser1, wh_rUser2, wh_rUser3 in combinations:
-            # Reset proximity tracking for each run
-            self._close_proximity_time = 0.0 # how long the vehicle has been in close proximity to a cyclist or other road user
+        costs = []
+        paths = []
+        
+        # Create column-wise combinations from the initialization lists
+        # Each combination uses one value from each list at the same index
+        num_combinations = min(len(self._wh_ego_list), 
+                            len(self._wh_policy_list),
+                            len(self._wh_rUser1_list),
+                            len(self._wh_rUser2_list),
+                            len(self._wh_rUser3_list))
+        
+        priority_names = [
+            "Ego priority",
+            "Policy priority",
+            "rUser1 priority",
+            "Policy & rUser1 balance",
+            "Ego & rUser1 balance",
+            "Equal balance"
+        ]
+        
+        # Iterate through the combinations
+        for i in range(num_combinations):
+            # Get weights from each list at index i
+            wh_ego = self._wh_ego_list[i]
+            wh_policy = self._wh_policy_list[i]
+            wh_rUser1 = self._wh_rUser1_list[i]
+            wh_rUser2 = self._wh_rUser2_list[i]
+            wh_rUser3 = self._wh_rUser3_list[i]
+            
+            # Log the combination being evaluated
+            priority_name = priority_names[i] if i < len(priority_names) else f"Combination {i}"
+            print(f"Evaluating {priority_name}: [{wh_ego}, {wh_policy}, {wh_rUser1}, {wh_rUser2}, {wh_rUser3}]")
             
             # Update current weights
             self._current_wh_ego = wh_ego
@@ -223,7 +277,12 @@ class MotionPrimitiveSearch:
             # Run A* with current weights
             cost, path, trajectory = self.run(debug=debug)
             trajectories.append((trajectory, (wh_ego, wh_policy, wh_rUser1, wh_rUser2, wh_rUser3)))
-        return trajectories
+            costs.append(cost)
+            paths.append(path)
+            
+            print(f"Completed {priority_name} with cost {cost}")
+        
+        return costs, paths, trajectories
 
     def is_goal(self, node: Tuple[float, float, float]) -> bool:
         _, _, theta = node
@@ -247,7 +306,7 @@ class MotionPrimitiveSearch:
         raw_distance_xy = np.sqrt((x - goal_x)**2 + (y - goal_y)**2)
         
         # Normalize to 0-1 range where 0 = at goal, 1 = at or beyond 80 meters
-        MAX_DISTANCE = 80.0  # meters
+        MAX_DISTANCE = ScenarioParameters.LENGTH  # meters
         normalized_distance = min(raw_distance_xy / MAX_DISTANCE, 1.0)
         
         return normalized_distance
@@ -293,10 +352,10 @@ class MotionPrimitiveSearch:
         
         # If we're too close, increment the time counter
         if distance_to_moving_obstacles < SAFETY_DISTANCE:
-            self._close_proximity_time += self._mps['straight'].n_seconds  # Add time for each node call
+            self._cyclist_proximity_time += self._mps['straight'].n_seconds  # Add time for each node call
         else:
             # Reset the counter if we're not too close anymore
-            self._close_proximity_time = 0.0
+            self._cyclist_proximity_time = 0.0
         
         # Define maximum allowed time in close proximity
         MAX_ALLOWED_TIME = CyclistParameters.TIME_THRESHOLD  # seconds
@@ -305,15 +364,15 @@ class MotionPrimitiveSearch:
         SATURATION_TIME = MAX_ALLOWED_TIME * 2.0  # seconds
         
         # Calculate time-based penalty
-        if self._close_proximity_time <= MAX_ALLOWED_TIME:
+        if self._cyclist_proximity_time <= MAX_ALLOWED_TIME:
             # No discomfort if within allowed time
             return 0.0
-        elif self._close_proximity_time >= SATURATION_TIME:
+        elif self._cyclist_proximity_time >= SATURATION_TIME:
             # Maximum discomfort if beyond saturation time
             return 1.0
         else:
             # Linear interpolation between allowed time and saturation time
-            normalized_excess_time = (self._close_proximity_time - MAX_ALLOWED_TIME) / (SATURATION_TIME - MAX_ALLOWED_TIME)
+            normalized_excess_time = (self._cyclist_proximity_time - MAX_ALLOWED_TIME) / (SATURATION_TIME - MAX_ALLOWED_TIME)
             return normalized_excess_time
 
     def compute_bicycle_distance_cost(self, distance_to_moving_obstacles: float) -> float:
@@ -372,10 +431,10 @@ class MotionPrimitiveSearch:
         
         # If we're too close, increment the time counter
         if distance_to_moving_obstacles < SAFETY_DISTANCE:
-            self._close_proximity_time += self._mps['straight'].n_seconds  # Add time for each node call
+            self._driver_proximity_time += self._mps['straight'].n_seconds  # Add time for each node call
         else:
             # Reset the counter if we're not too close anymore
-            self._close_proximity_time = 0.0
+            self._driver_proximity_time = 0.0
             
         # Define maximum allowed time in close proximity
         MAX_ALLOWED_TIME = DriverParameters.TIME_THRESHOLD  # seconds
@@ -384,15 +443,15 @@ class MotionPrimitiveSearch:
         SATURATION_TIME = MAX_ALLOWED_TIME * 1.5  # seconds after threshold when impatience reaches maximum
         
         # Calculate time-based impatience
-        if self._close_proximity_time <= MAX_ALLOWED_TIME:
+        if self._driver_proximity_time <= MAX_ALLOWED_TIME:
             # No impatience if within allowed time
             return 0.0
-        elif self._close_proximity_time >= (MAX_ALLOWED_TIME + SATURATION_TIME):
+        elif self._driver_proximity_time >= (MAX_ALLOWED_TIME + SATURATION_TIME):
             # Maximum impatience if beyond saturation point
             return 1.0
         else:
             # Exponential growth of impatience between threshold and saturation
-            excess_time = self._close_proximity_time - MAX_ALLOWED_TIME
+            excess_time = self._driver_proximity_time - MAX_ALLOWED_TIME
             
             # Exponential function that grows from 0 to 1
             raw_impatience = 1.0 - np.exp(-3.0 * excess_time / SATURATION_TIME)
@@ -436,17 +495,58 @@ class MotionPrimitiveSearch:
 
             # === Reasoning Components ===
             
+            # Check if the ego vehicle has passed the bicycle
+            # Assume forward direction is along y-axis
+            PASSING_MARGIN = 2.0  # meters - how far ahead the vehicle needs to be to be considered "passed"
+            has_passed_bicycle = y > (projected_rUser1_y + PASSING_MARGIN)
+            
             # Ego-related costs (efficiency and patience)
-            ego_patience = self.compute_ego_patience(distance_to_rUser1)
-            ego_cost = self._wh_ego_efficiency_reason * normalized_distance_xy + self._wh_ego_patience_reason * ego_patience
+            # Driver patience only matters if we're behind the bicycle or just passing
+            if has_passed_bicycle:
+                # If we've passed, driver is fully patient
+                ego_patience = 0.0
+            else:
+                # Otherwise calculate normally
+                ego_patience = self.compute_ego_patience(distance_to_rUser1)
+            
+            ego_cost = (self._wh_ego_efficiency_reason * normalized_distance_xy +
+                        self._wh_ego_patience_reason * ego_patience +
+                        self._wh_ego_human_like_reasons * steering_change_cost +
+                        self._wh_ego_goal_reason * distance_theta)
             
             # Policy-related costs (centerline deviation)
-            centerline_deviation = self.compute_centerline_deviation_cost(x)
+            if has_passed_bicycle:
+                # After passing, vehicle should stay in the middle of the right lane
+                # Assuming right lane center is at x = 1.9 (adjust this value based on your road geometry)
+                RIGHT_LANE_CENTER = 1.5  # meters (adjust as needed)
+                
+                # Calculate deviation from right lane center (should be minimized)
+                deviation_from_right_lane = abs(x - RIGHT_LANE_CENTER)
+                
+                # Normalize to 0-1 range (0 = perfect center, 1 = far from center)
+                # Assuming lane width is about 3 meters
+                LANE_WIDTH = 3  # meters
+                normalized_deviation = min(deviation_from_right_lane / (LANE_WIDTH/2), 1.0)
+                
+                # Use this as the policy cost - encourages staying in lane center
+                centerline_deviation = normalized_deviation
+            else:
+                # Before passing, use regular centerline deviation (stay on right side)
+                centerline_deviation = self.compute_centerline_deviation_cost(x)
+
             policy_cost = self._wh_policymaker_rightlane_reason * centerline_deviation
             
             # Road User 1 (Cyclist) costs - comfort based on distance and time
-            cyclist_distance_comfort = self.compute_bicycle_distance_cost(distance_to_rUser1)
-            cyclist_time_comfort = self.compute_bicycle_time_cost(distance_to_rUser1)
+            # Cyclist comfort only matters if we're behind or currently passing
+            if has_passed_bicycle:
+                # If we've fully passed the bicycle, there's no comfort impact
+                cyclist_distance_comfort = 0.0
+                cyclist_time_comfort = 0.0
+            else:
+                # Otherwise calculate normally
+                cyclist_distance_comfort = self.compute_bicycle_distance_cost(distance_to_rUser1)
+                cyclist_time_comfort = self.compute_bicycle_time_cost(distance_to_rUser1)
+            
             cyclist_total_comfort = cyclist_distance_comfort * cyclist_time_comfort
             rUser1_cost = self._wh_rUser1_comfort_reason * cyclist_total_comfort
             
@@ -459,7 +559,9 @@ class MotionPrimitiveSearch:
             ego_cost = (
                         self._wh_dist2goal * distance_xy + 
                           self._wh_dist2obs * obstacle_avoidance_cost +
-                            self._wh_dist2center * distance_from_center
+                            self._wh_dist2center * distance_from_center +
+                                self._wh_theta2goal * distance_theta +
+                                    self._wh_steer2goal * steering_change_cost
                         )
             
             # Policy-related costs (centerline deviation)            
@@ -550,19 +652,24 @@ class MotionPrimitiveSearch:
 if __name__ == '__main__':
     fig, ax = plt.subplots(figsize=(12, 8))
     mps = load_motion_primitives(version='bicycle_model')
-    scenario = intersection(turn_indicator=2, start_pos=1, start_lane=1, goal_lane=2, number_of_lanes=3)
+    scenario = 'arterial'
+    if scenario == 'intersection':
+        scenario = intersection(turn_indicator=2, start_pos=1, start_lane=1, goal_lane=2, number_of_lanes=3)
+    elif scenario == 'arterial':
+        scenario = ArterialMultiLanes(num_lanes=2, goal_lane=1)
+        scenario = scenario.create_scenario()
     car_dimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
 
     # Example of moving obstacle (bicycle) [x, y, velocity]
-    moving_obstacle = np.array([5.0, 10.0, 1.5])  # position (5,10) with 1.5 m/s velocity
+    moving_obstacle = np.array([3.0, 10.0, 1.5])  # position (5,10) with 1.5 m/s velocity
 
     search = MotionPrimitiveSearch(
         scenario, car_dimensions, mps, margin=car_dimensions.radius,
         moving_obstacles_state=moving_obstacle,
         centerline=0.0,
         # Different weight combinations to explore
-        wh_ego=[0.25, 0.5], 
-        wh_policy=[0.25, 0.5], 
+        wh_ego=[0.25, 0.5],
+        wh_policy=[0.25, 0.5],
         wh_rUser1=[0.5, 0.25]
     )
 
