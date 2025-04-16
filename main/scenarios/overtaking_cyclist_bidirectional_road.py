@@ -1,4 +1,5 @@
 # Standard library
+import copy
 import csv
 import itertools
 import math
@@ -20,7 +21,7 @@ from envs.arterial_multi_lanes import ArterialMultiLanes
 from lib.car_dimensions import CarDimensions, BicycleModelDimensions, BicycleRealDimensions
 from lib.collision_avoidance import get_cutoff_curve_by_position_idx, check_collision_moving_bicycle
 from lib.motion_primitive import load_motion_primitives
-from lib.mp_search_ww_generic import MotionPrimitiveSearch
+from lib.mp_search_reasoning import MotionPrimitiveSearch
 from lib.moving_obstacles import MovingObstacleArterial
 from lib.moving_obstacles_prediction import MovingObstaclesPrediction
 from lib.mpc import MPC, MAX_ACCEL
@@ -28,37 +29,8 @@ from lib.plotting import draw_car, draw_bicycle, draw_astar_search_points
 from lib.reasons_evaluation import evaluate_distance_to_centerline, evaluate_distance_to_obstacle, evaluate_time_following
 from lib.simulation import History, HistorySimulation, Simulation, State
 from lib.trajectories import calc_nearest_index_in_direction, resample_curve
-
-from dataclasses import dataclass
-
-# Constants
-@dataclass
-class ScenarioParameters:
-    DT = 0.1  # Time step
-    CENTERLINE_LOCATION = 0.0  # Centerline location for evaluation
-
-@dataclass
-class ReasonParameters:
-    REASONS_THRESHOLD = 0.7  # Threshold for reasons to trigger replan
-
-@dataclass
-class MPCParameters:
-    TIME_HORIZON = 7.0  # Time horizon for predictions
-    FRAME_WINDOW = 20  # Frame window for collision checking
-    MAX_SPEED_FREEWAY = 30 / 3.6  # Maximum speed for freeway
-
-@dataclass
-class DriverParameters:
-    DISTANCE_REF = 10.0  # Reference distance for driver patience
-    DISTANCE_BUFFER = 2.0  # Buffer distance for driver patience
-    TIME_THRESHOLD = 10.0  # Time threshold for driver patience
-
-@dataclass
-class CyclistParameters:
-    DISTANCE_REF = 8.0  # Reference distance for cyclist patience
-    DISTANCE_BUFFER = 1.0  # Buffer distance for cyclist patience
-    TIME_THRESHOLD = 5.0  # Time threshold for cyclist patience
-    SPEED = 5 / 3.6 # Cyclist speed [km/h]
+# In overtaking_cyclist_bidirectional_road.py
+from lib.parameters import CyclistParameters, DriverParameters, ScenarioParameters, MPCParameters, ReasonParameters
 
 # Initialize logging
 import logging
@@ -174,7 +146,17 @@ def main(replanner: bool = False) -> None:
                 # Perform replan, reset the trajectory, MPC, and collision status
                 IS_FOLLOWING = False
                 # change max_speed of the MPC to 30/3.6
-                collision_xy, mpc, traj_agent_idx, trajectory_full, scenario_obstacles = perform_replan(arterial, car_dimensions, dl, moving_obstacles, mps, state, trajs_moving_obstacles, max_speed=MPCParameters.MAX_SPEED_FREEWAY, is_following=IS_FOLLOWING)
+                collision_xy, mpc, traj_agent_idx, trajectory_full, scenario_obstacles = perform_replan(
+                            arterial, car_dimensions, bicycle_dimensions, dl, moving_obstacles, mps, state,
+                            trajs_moving_obstacles, scenario_visualization,
+                            reasons_cyclist_comfort, reasons_driver_time_eff, reasons_policymaker_reg_compliance,
+                            reasons_cyclist_values, reasons_driver_values, reasons_policymaker_values,
+                            time_values,
+                            max_speed=MPCParameters.MAX_SPEED_FREEWAY,
+                            is_following=IS_FOLLOWING,
+                            time_elapsed_driver=TIME_ELAPSED_DRIVER,
+                            time_passed_cyclist=TIME_PASSED_CYCLIST
+                        )
                 scenario = scenario_obstacles
 
         # Cut off the trajectory before a collision occurs, with an additional margin
@@ -256,7 +238,7 @@ def cutoff_trajectory_before_collision(EXTRA_CUTOFF_MARGIN, collision_xy, traj_a
     return tmp_trajectory
 
 
-def compute_predicted_trajectory(state, trajectory_res):
+def compute_predicted_trajectory(state, trajectory_res, last_index=None):
     """
     Compute the predicted trajectory for the car based on its current speed and maximum acceleration.
 
@@ -267,14 +249,19 @@ def compute_predicted_trajectory(state, trajectory_res):
     Returns:
         np.ndarray: The resampled trajectory based on acceleration.
     """
-    if state.v < Simulation.MAX_SPEED:
-        resample_dl = np.zeros((trajectory_res.shape[0],)) + MAX_ACCEL
-        resample_dl = np.cumsum(resample_dl) + state.v
-        resample_dl = ScenarioParameters.DT * np.minimum(resample_dl, Simulation.MAX_SPEED)
-        trajectory_res = resample_curve(trajectory_res, dl=resample_dl)
+    if last_index is None:
+        if state.v < Simulation.MAX_SPEED:
+            resample_dl = np.zeros((trajectory_res.shape[0],)) + MAX_ACCEL
+            resample_dl = np.cumsum(resample_dl) + state.v
+            resample_dl = ScenarioParameters.DT * np.minimum(resample_dl, Simulation.MAX_SPEED)
+            trajectory_res = resample_curve(trajectory_res, dl=resample_dl)
+        else:
+            trajectory_res = resample_curve(trajectory_res, dl=ScenarioParameters.DT * Simulation.MAX_SPEED)
+        return trajectory_res
     else:
-        trajectory_res = resample_curve(trajectory_res, dl=ScenarioParameters.DT * Simulation.MAX_SPEED)
-    return trajectory_res
+        trajectory_res = resample_curve(trajectory_res, dl=ScenarioParameters.DT * state.v)
+        return trajectory_res
+
 
 
 def update_trajectory_index(state, tmp_trajectory, traj_agent_idx, trajectory_full):
@@ -297,7 +284,12 @@ def update_trajectory_index(state, tmp_trajectory, traj_agent_idx, trajectory_fu
     return traj_agent_idx
 
 
-def perform_replan(arterial, car_dimensions, dl, moving_obstacles, mps, state, trajs_moving_obstacles, max_speed, is_following=True):
+def perform_replan(arterial, car_dimensions, bicycle_dimensions, dl, moving_obstacles, mps, state,
+                   trajs_moving_obstacles, scenario_visualization,
+                   reasons_cyclist_comfort, reasons_driver_time_eff, reasons_policymaker_reg_compliance,
+                   reasons_cyclist_values, reasons_driver_values, reasons_policymaker_values,
+                   time_values, max_speed,
+                   is_following=True, time_elapsed_driver=0.0, time_passed_cyclist=0.0):
     """
     Perform a replan based on the current state and moving obstacles.
 
@@ -313,37 +305,739 @@ def perform_replan(arterial, car_dimensions, dl, moving_obstacles, mps, state, t
     Returns:
         tuple: A tuple containing the updated trajectory, MPC, and collision status.
     """
-    # Get current moving_obstacles x, y position
-    moving_obstacles_x = [o.get()[0] for o in moving_obstacles]
-    moving_obstacles_y = [o.get()[1] for o in moving_obstacles]
-    # Create a new scenario with updated obstacle positions
-    # NEXTTODO: Change spawn location and av location in the same variable. If possible to make it possible to
-    #  spawn more vehicles in the same or different heading
+    # Extract bicycle position and velocity for the motion planner
+    bicycle_x = moving_obstacles[0].get()[0]
+    bicycle_y = moving_obstacles[0].get()[1]
+    bicycle_v = moving_obstacles[0].get()[4]
+    bicycle_state = np.array([bicycle_x, bicycle_y, bicycle_v])
+
+    # Create a new scenario with prediction of obstacle positions from current time to the TIME_HORIZON ahead
     scenario_obstacles = arterial.create_scenario(
         moving_obstacles=True,
         moving_obstacles_trajectory=trajs_moving_obstacles,
-        spawn_location_x=moving_obstacles_x[0],
-        spawn_location_y=moving_obstacles_y[0],
+        spawn_location_x=bicycle_x,
+        spawn_location_y=bicycle_y,
         av_location_x=state.x,
         av_location_y=state.y,
         is_following=is_following
     )
     logger.info(f"Initial position: {scenario_obstacles.start}")
+
     # Perform motion primitive search
-    search = MotionPrimitiveSearch(scenario_obstacles, car_dimensions, mps, margin=car_dimensions.radius)
-    cost, path, trajectory_full = search.run(debug=True)
-    tmp_trajectory = trajectory_full
-    traj_agent_idx = 0  # Reset trajectory index
+    search = MotionPrimitiveSearch(scenario_obstacles, car_dimensions, mps, margin=car_dimensions.radius,
+                                   moving_obstacles_state=bicycle_state,
+                                    driver_elapsed_time=time_elapsed_driver,
+                                    cyclist_elapsed_time=time_passed_cyclist
+                                )
+
+    # Calculate all trajectories
+    costs, paths, trajectories_full = search.run_all(debug=True)
+
+    # Create a new trajectory for the ego vehicle to follow the cyclist
+    follow_trajectory = create_following_trajectory(state, trajectories_full)
+
+    # Add the trajectory to the list of trajectories to the last position
+    trajectories_full.append((follow_trajectory,(0.0, 0.0, 0.0, 0.0, 0.0)))
+
+    # Evaluate trajectories based on human-centered reasons
+    agent_weights, eval_results = evaluate_trajectories_for_reasons(
+        trajectories_full,
+        moving_obstacles,
+        state,
+        car_dimensions,
+        bicycle_dimensions,
+        reasons_cyclist_comfort,
+        reasons_driver_time_eff,
+        reasons_policymaker_reg_compliance,
+        time_elapsed_driver=time_elapsed_driver,
+        time_passed_cyclist=time_passed_cyclist
+    )
+
+    # In perform_replan after evaluation
+
+    visualize_trajectory_evaluations(
+        eval_results, trajectories_full, moving_obstacles, state, car_dimensions, bicycle_dimensions, scenario_visualization, time_values,
+        reasons_cyclist_values, reasons_driver_values, reasons_policymaker_values, agent_weights,
+        save_path=os.path.join("..", "results", "reasons_evaluation", "trajectory_evaluations.png")
+    )
+
+    # Use the best trajectory
+    best_idx = eval_results['best_idx']
+    trajectory_full = trajectories_full[best_idx]
+    trajectory_full = trajectory_full[0]
+
+    logger.info(
+        f"Selected trajectory {best_idx} with human-centered score: {eval_results['best_evaluation']['total_score']:.3f}")
+    logger.info(f"Policymaker: {eval_results['best_evaluation']['avg_scores']['policymaker']:.2f}, "
+                f"Driver: {eval_results['best_evaluation']['avg_scores']['driver']:.2f}, "
+                f"Cyclist: {eval_results['best_evaluation']['avg_scores']['cyclist']:.2f}")
+
     # Reset MPC with new trajectory
+    traj_agent_idx = 0  # Reset trajectory index
     mpc = MPC(
         cx=trajectory_full[:, 0],
         cy=trajectory_full[:, 1],
         cyaw=trajectory_full[:, 2],
         dl=dl, speed=max_speed, dt=ScenarioParameters.DT, car_dimensions=car_dimensions
     )
-    collision_xy = None  # Reset collision tracker if needed
+    collision_xy = None  # Reset collision tracker
+
+    # Store evaluation data for later analysis if needed
+    scenario_obstacles.trajectory_evaluation = eval_results
+
     return collision_xy, mpc, traj_agent_idx, trajectory_full, scenario_obstacles
 
+
+def create_following_trajectory(state, trajectories_full):
+    # Add one trajectory if the ego keeps stay on its current lane following the cyclist
+    # Pick one of the trajectories_full in order calculate completion_time
+    resampled_trajectory = compute_predicted_trajectory(state, trajectories_full[0][0])
+    completion_time = calculate_trajectory_completion_time(resampled_trajectory, state)
+    # Get initial values
+    init_x = resampled_trajectory[0, 0]  # Initial x value
+    init_y = resampled_trajectory[0, 1]  # Initial y value
+    init_theta = resampled_trajectory[0, 2]  # Initial theta value
+    original_length = len(resampled_trajectory)
+    # Create a copy of the trajectory to modify
+    follow_trajectory = resampled_trajectory.copy()
+    # Create an array of y-positions with proper length
+    new_y_values = np.arange(
+        init_y,
+        init_y + (completion_time * state.v),
+        (state.v * ScenarioParameters.DT)
+    )
+    # Ensure the array has the correct length
+    if len(new_y_values) != original_length:
+        # If too short, extend the array by repeating the last value
+        if len(new_y_values) < original_length:
+            new_y_values = np.append(
+                new_y_values,
+                np.repeat(new_y_values[-1], original_length - len(new_y_values))
+            )
+        # If too long, truncate the array
+        else:
+            new_y_values = new_y_values[:original_length]
+    # Now assign the correctly sized array for y-coordinate (column 1)
+    follow_trajectory[:, 1] = new_y_values
+    # Keep x-coordinate (column 0) constant at the initial value
+    follow_trajectory[:, 0] = init_x
+    # Keep orientation (column 2) constant at the initial value
+    follow_trajectory[:, 2] = init_theta
+    return follow_trajectory
+
+
+def visualize_trajectory_evaluations(eval_results, trajectories_full, moving_obstacles, state, car_dimensions,
+                                     bicycle_dimensions, scenario, time_values,
+                                     reasons_cyclist_values, reasons_driver_values, reasons_policymaker_values, agent_weights,
+                                     save_path=None):
+    """
+    Visualize trajectory evaluations to compare different options using a 3×2 layout.
+
+    Args:
+        eval_results: Evaluation results from evaluate_trajectories_for_reasons
+        trajectories_full: List of trajectories
+        moving_obstacles: List of moving obstacles
+        state: Current vehicle state
+        car_dimensions: Vehicle dimensions
+        bicycle_dimensions: Bicycle dimensions
+        scenario: Scenario object containing environment information
+        save_path: Optional path to save the visualization
+    """
+    if not trajectories_full:
+        logger.warning("No trajectories to visualize")
+        return
+
+    # Create figure with GridSpec for 3×2 layout
+    fig = plt.figure(figsize=(10, 10))
+    gs = gridspec.GridSpec(3, 2, height_ratios=[1, 1, 1], width_ratios=[1.5, 1])
+
+    # Create subplots - trajectory plot spans all rows in column 1
+    ax_spatial = plt.subplot(gs[:, 0])  # Left column: Trajectories (spans all rows)
+    ax_policy = plt.subplot(gs[0, 1])  # Top-right: Policy scores
+    ax_driver = plt.subplot(gs[1, 1])  # Middle-right: Driver scores
+    ax_cyclist = plt.subplot(gs[2, 1])  # Bottom-right: Cyclist scores
+
+    # Set background color for spatial plot
+    ax_spatial.set_facecolor('#AFABAB')
+
+    # Colors for different trajectories with better visibility
+    colors = ['#0000FF', '#000000', '#FF0000', '#BF00C0', '#00BFBF', '#8c564b']
+    line_styles = ['--', '-.', '-.', '--', '-.', '--']  # Cycle through styles
+    line_widths = [2.0, 2.0, 2.0, 2.0, 2.0, 2.0]  # Varying widths
+
+    # Create trajectory styling with trajectory info and line properties
+    trajectory_styles = []
+    for i, trajectory in enumerate(trajectories_full):
+        # For trajectories with tuple structure (from run_all)
+        if isinstance(trajectory, tuple):
+            trajectory_points = trajectory[0]
+        else:
+            trajectory_points = trajectory
+
+        # Extract evaluation data
+        eval_data = eval_results['all_evaluations'][i]
+        score = eval_data['total_score']
+
+        # Store trajectory info along with styling
+        trajectory_styles.append({
+            'trajectory': trajectory_points,
+            'color': colors[i % len(colors)],
+            'style': line_styles[i % len(line_styles)],
+            'width': line_widths[i % len(line_widths)],
+            'score': score,
+            'index': i,
+            'eval_data': eval_data
+        })
+
+    # Sort trajectory styles by line width (thickest first)
+    trajectory_styles.sort(key=lambda x: x['width'], reverse=True)
+
+    # Plot car at current state
+    car_polygon = draw_car((state.x, state.y, state.yaw), car_dimensions, ax=ax_spatial, color='black')
+
+    # Plot bicycle/moving obstacles
+    for i, obstacle in enumerate(moving_obstacles):
+        obstacle_x, obstacle_y, _, obstacle_yaw, _, _ = obstacle.get()
+        draw_bicycle((obstacle_x, obstacle_y, obstacle_yaw), bicycle_dimensions, ax=ax_spatial, color='blue')
+
+    # Draw all static elements from scenario
+    draw_static_elements(ax_spatial, scenario)
+
+    # Plot trajectories in order of line width (thickest first, thinnest last)
+    for style_info in trajectory_styles:
+        trajectory_points = style_info['trajectory']
+        color = style_info['color']
+        style = style_info['style']
+        width = style_info['width']
+        score = style_info['score']
+        i = style_info['index']
+
+        # Plot main trajectory line with simplified label
+        ax_spatial.plot(
+            trajectory_points[:, 0], trajectory_points[:, 1],
+            color=color,
+            linestyle=style,
+            linewidth=width,
+            label=f"Traj {i}: {score:.3f}"  # Simplified label
+        )
+
+        # Add title to the spatial plot
+        priority_label = get_priority_label(agent_weights)
+        weights_label = format_weights(agent_weights)
+        ax_spatial.set_title(f"{priority_label} \n {weights_label}", fontsize=16, pad=10)
+
+        # Set plot limits and aspect ratio
+        ax_spatial.set_aspect('equal')
+        ax_spatial.grid(True, alpha=0.3)  # Keep grid only for spatial plot
+
+        # Add arrow to show direction
+        mid_idx = len(trajectory_points) // 2
+        if mid_idx > 0:
+            arrow_start = trajectory_points[mid_idx - 1, :2]
+            arrow_end = trajectory_points[mid_idx, :2]
+            dx = arrow_end[0] - arrow_start[0]
+            dy = arrow_end[1] - arrow_start[1]
+            ax_spatial.arrow(
+                arrow_start[0], arrow_start[1], dx, dy,
+                head_width=0.3, head_length=0.6, fc=color, ec=color
+            )
+
+    # Set plot limits and aspect ratio
+    ax_spatial.set_aspect('equal')
+    ax_spatial.grid(True, alpha=0.3)  # Keep grid only for spatial plot
+
+    # Set appropriate axis limits
+    car_x, car_y = state.x, state.y
+    ax_spatial.set_xlim(car_x - 20, car_x + 20)
+    ax_spatial.set_ylim(car_y - 5, car_y + 52)
+
+    # Trajectory legend inside the plot (to save space)
+    # Sort legend entries by trajectory index for consistency
+    handles, labels = ax_spatial.get_legend_handles_labels()
+    # Extract trajectory numbers and sort by them
+    traj_nums = [int(label.split(':')[0].split(' ')[1]) for label in labels]
+    sorted_pairs = sorted(zip(handles, labels, traj_nums), key=lambda x: x[2])
+    ax_spatial.legend([pair[0] for pair in sorted_pairs], [pair[1] for pair in sorted_pairs],
+                      loc='upper right', fontsize=10)
+
+    # Plot reason scores
+    reason_plots = [
+        (ax_policy, "Policymaker Reasons", 'policymaker'),
+        (ax_driver, "Driver Reasons", 'driver'),
+        (ax_cyclist, "Cyclist Reasons", 'cyclist_combined')
+    ]
+
+    # Plot each reason with consistent styling, but in order of line width
+    for ax, title, score_key in reason_plots:
+        ax.set_title(title, fontsize=16)
+        ax.set_ylim(0, 1.1)
+        ax.set_xlabel("Time [s]", fontsize=14)
+        ax.set_ylabel("Reasons [0-1]", fontsize=14)
+        ax.tick_params(axis='both', which='major', labelsize=12)
+
+        # Remove grid (change #2)
+        ax.grid(False)
+
+        # Keep white background (change #2)
+        # No gray background - removed the line: ax.axhspan(0.0, 1.0, alpha=0.1, color='gray')
+
+        # Create style info for reason lines, but sorted by width
+        reason_styles = []
+        # Track minimum scores for this reason type
+        min_score = 1.0  # Start with maximum possible (1.0)
+
+        for style_info in trajectory_styles:
+            i = style_info['index']
+            scores = style_info['eval_data']['detailed_scores'][score_key]
+            # Update minimum score if any value is lower
+            if len(scores) > 0:
+                min_score = min(min_score, np.min(scores))
+
+            reason_styles.append({
+                'scores': scores,
+                'color': style_info['color'],
+                'style': style_info['style'],
+                'width': style_info['width'],
+                'index': i,
+                'completion_time': style_info['eval_data']['completion_time']
+            })
+
+        # Map of score keys to reason values lists
+        reason_values_map = {
+            'policymaker': reasons_policymaker_values,
+            'driver': reasons_driver_values,
+            'cyclist_combined': reasons_cyclist_values
+        }
+
+        # Check historical data for minimum as well
+        if isinstance(reason_values_map[score_key], list) and len(reason_values_map[score_key]) > 0:
+            min_score = min(min_score, min(reason_values_map[score_key]))
+
+        # Set y-axis limits based on minimum score with some padding
+        # Round down to nearest 0.1 to have clean axis limits
+        min_y = max(0, math.floor(min_score * 10) / 10)  # Never go below 0
+        ax.set_ylim(min_y - 0.1, 1.1)
+        # Sort by line width (thickest first)
+        reason_styles.sort(key=lambda x: x['width'], reverse=True)
+
+        # Plot each trajectory's scores with consistent styling
+        for style_info in reason_styles:
+            color = style_info['color']
+            style = style_info['style']
+            width = style_info['width']
+            scores = style_info['scores']
+            i = style_info['index']
+            completion_time = style_info['completion_time']
+
+            time_values_ = copy.deepcopy(time_values)
+            reasons_policymaker_values_ = copy.deepcopy(reasons_policymaker_values)
+            reasons_driver_values_ = copy.deepcopy(reasons_driver_values)
+            reasons_cyclist_values_ = copy.deepcopy(reasons_cyclist_values)
+
+            # Map of score keys to reason values lists
+            reason_values_map = {
+                'policymaker': reasons_policymaker_values_,
+                'driver': reasons_driver_values_,
+                'cyclist_combined': reasons_cyclist_values_
+            }
+
+            # Calculate the range of historical data (before extension)
+            if isinstance(time_values, list) and len(time_values) > 0:
+                historical_start = time_values[0] if np.isscalar(time_values[0]) else time_values[0]
+                historical_end = time_values[-1] if np.isscalar(time_values[-1]) else time_values[-1]
+
+                # Add a colored background rectangle for historical data
+                historical_rect = plt.Rectangle(
+                    (historical_start, 0),
+                    width=(historical_end - historical_start),
+                    height=1.1,
+                    color='#F7E2DA',
+                    alpha=0.5,
+                    zorder=0  # Ensure it's behind the plotted lines
+                )
+                ax.add_patch(historical_rect)
+
+                # Optionally add a vertical line at the transition point
+                ax.axvline(x=historical_end, color='#D3B1A6', linestyle='--', linewidth=1, alpha=0.7)
+
+                # Add a label
+                ax.text(
+                    (historical_start + historical_end)/2,
+                    1.05,
+                    'Before replanner triggered',
+                    ha='center',
+                    va='center',
+                    fontsize=8,
+                    bbox=dict(facecolor='#F7E2DA', alpha=0.7, boxstyle='round,pad=0.2', edgecolor='#D3B1A6')
+                )
+
+                # Plot the scores - accessing the specific list for this score_key
+                ax.plot(
+                    time_values_, reason_values_map[score_key],  # Access the list for this specific key
+                    color='black')
+
+            # If you need to keep track of all time points
+            if isinstance(time_values_, list):
+                # For the first call, time_values[-1] might be a number
+                last_time = time_values_[-1] if np.isscalar(time_values_[-1]) else time_values_[-1]
+
+                # Generate new time points with fixed 0.1s intervals
+                start_time = last_time + ScenarioParameters.DT
+                end_time = start_time + completion_time
+                num_full_steps = int((end_time - start_time) / 0.1)  # Number of complete 0.1s intervals
+                remaining_time = (end_time - start_time) - (num_full_steps * 0.1)  # Any remaining time
+
+                # Generate the regular 0.1s intervals
+                regular_points = np.array([start_time + i * 0.1 for i in range(num_full_steps)])
+
+                # Add the final point if there's a remainder
+                if remaining_time > 0:
+                    time_points = np.append(regular_points, end_time)
+                else:
+                    time_points = regular_points
+
+                # Ensure we have the right number of points
+                if len(time_points) < len(scores):
+                    # If we need more points, add intermediate points (this shouldn't normally happen)
+                    missing_points = len(scores) - len(time_points)
+                    additional_points = np.linspace(start_time, end_time, missing_points + 2)[1:-1]
+                    time_points = np.sort(np.concatenate([time_points, additional_points]))
+                elif len(time_points) > len(scores):
+                    # If we have too many points, truncate
+                    time_points = time_points[:len(scores)]
+
+            #     # Use extend to append individual values (not the whole array)
+            #     time_values_.extend(time_points)
+            #
+            #     # Use these new time points for plotting the current trajectory
+            #     plot_times = time_points
+            # else:
+            #     # If time_values is not a list, create new time points from 0
+            #     time_points = np.linspace(0, completion_time, len(scores))
+            #     plot_times = time_points
+            #
+            # # Extend the appropriate reason values list
+            # if isinstance(reason_values_map[score_key], list):
+            #     reason_values_map[score_key].extend(scores)  # Extend with individual values
+            # else:
+            #     reason_values_map[score_key] = list(scores)  # Convert to list if not already
+
+            # Plot the scores - accessing the specific list for this score_key
+            ax.plot(
+                time_points, scores,  # Access the list for this specific key
+                color=color, linestyle=style, linewidth=width
+            )
+
+
+        # Remove safety threshold line (change #1)
+        # Removed the code: ax.axhline(y=0.3, color='r', linestyle=':', linewidth=2, label='Safety Threshold')
+
+    # Add a common legend to the first plot only (top-right)
+    # Sort legend entries by trajectory index for consistency
+    handles, labels = ax_policy.get_legend_handles_labels()
+
+    # Sort by trajectory number
+    traj_labels = [l for l in labels if l.startswith('Traj')]
+    if traj_labels:
+        # Extract trajectory numbers and sort by them
+        traj_nums = [int(label.split(' ')[1]) for label in traj_labels]
+        sorted_idx = sorted(range(len(traj_nums)), key=lambda i: traj_nums[i])
+
+        sorted_handles = [handles[i] for i in sorted_idx]
+        sorted_labels = [labels[i] for i in sorted_idx]
+
+        ax_policy.legend(sorted_handles, sorted_labels,
+                         loc='upper center', ncol=1, fontsize=9, bbox_to_anchor=(0.2, 0.6))
+
+    # Remove redundant legends from other plots
+    if ax_driver.get_legend():
+        ax_driver.get_legend().remove()
+    if ax_cyclist.get_legend():
+        ax_cyclist.get_legend().remove()
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=800, bbox_inches='tight')
+
+    plt.show()
+
+def get_priority_label(agent_weights):
+    """
+    Return a human-readable label based on the agent weights.
+
+    Args:
+        agent_weights: Dictionary containing weights for different agents (policymaker, driver, cyclist)
+
+    Returns:
+        str: A descriptive label indicating the priority focus
+    """
+    # Extract weights from the dictionary
+    policy_weight = agent_weights.get('policymaker', 0.0)
+    driver_weight = agent_weights.get('driver', 0.0)
+    cyclist_weight = agent_weights.get('cyclist', 0.0)
+
+    # Determine the priority based on the highest weight
+    max_weight = max(policy_weight, driver_weight, cyclist_weight)
+
+    # Small threshold for considering weights approximately equal
+    threshold = 0.05
+
+    if max_weight == driver_weight and driver_weight >= 0.5:
+        return "Trajectory Scoring Based on Human Reasons \n (Driver Reasons Weighted Higher)"
+    elif max_weight == policy_weight and policy_weight >= 0.5:
+        return "Trajectory Scoring Based on Human Reasons \n (Policymaker Reasons Weighted Higher)"
+    elif max_weight == cyclist_weight and cyclist_weight >= 0.5:
+        return "Trajectory Scoring Based on Human Reasons \n (Cyclist Reasons Weighted Higher)"
+    elif abs(driver_weight - policy_weight) < threshold and abs(driver_weight - cyclist_weight) < threshold:
+        return "Trajectory Scoring Based on Human Reasons \n (All Reasons Weighted The Same)"
+    else:
+        return "Mixed Priority"
+
+def format_weights(agent_weights):
+    """
+    Format agent weights as a concise string.
+
+    Args:
+        agent_weights: Dictionary containing weights for different agents (policymaker, driver, cyclist)
+
+    Returns:
+        str: A formatted string representation of the weights
+    """
+    # Extract weights from the dictionary
+    policy_weight = agent_weights.get('policymaker', 0.0)
+    driver_weight = agent_weights.get('driver', 0.0)
+    cyclist_weight = agent_weights.get('cyclist', 0.0)
+
+    # Format with D for driver, P for policy, C for cyclist
+    return f"Driver:{driver_weight:.2f}; Policymaker:{policy_weight:.2f}; Cyclist:{cyclist_weight:.2f}"
+
+def evaluate_trajectories_for_reasons(trajectories_full, moving_obstacles, state, car_dimensions, bicycle_dimensions,
+                                      reasons_cyclist_comfort, reasons_driver_time_eff, reasons_policymaker_reg_compliance,
+                                      time_elapsed_driver=0.0, time_passed_cyclist=0.0):
+    """
+    Evaluate multiple trajectories based on human-centered reasons.
+
+    Args:
+        trajectories_full: List of candidate trajectories
+        moving_obstacles: List of moving obstacles (bicycle)
+        state: Current state of the vehicle
+        car_dimensions: Dimensions of the car
+        bicycle_dimensions: Dimensions of the bicycle
+
+    Returns:
+        dict: Evaluation results with scores and best trajectory
+    """
+    trajectory_scores = []
+    detailed_evaluations = []
+
+    # For each trajectory option
+    for i, trajectory in enumerate(trajectories_full):
+        # 1. Calculate time needed to complete this trajectory
+        # For the last trajectory, we need to calculate resampled_trajectory differently
+        if i == len(trajectories_full) - 1:
+            resampled_trajectory = compute_predicted_trajectory(state, trajectory[0],last_index=True)
+            # set completion time as the real completion time from other trajectories
+            # completion_time = calculate_trajectory_completion_time(resampled_trajectory, state, last_index=True)
+        else:
+            resampled_trajectory = compute_predicted_trajectory(state, trajectory[0])
+            completion_time = calculate_trajectory_completion_time(resampled_trajectory, state)
+
+        # 2. Predict bicycle movement for this duration
+        bicycle_future_trajectory = np.vstack(MovingObstaclesPrediction(
+            *moving_obstacles[0].get(),
+            sample_time=ScenarioParameters.DT,
+            car_dimensions=bicycle_dimensions
+        ).state_prediction(completion_time)).T
+
+        # 3. Sample points along both trajectories
+        num_sample_points = len(resampled_trajectory)
+
+        # Create evenly spaced indices
+        ego_indices = np.linspace(0, len(resampled_trajectory) - 1, num_sample_points, dtype=int)
+        # Delete the last point of bicycle_future_trajectory
+        bicycle_indices = np.linspace(0, len(bicycle_future_trajectory[:-1]) - 1, num_sample_points, dtype=int)
+
+        # 4. Evaluate reasons at each sample point
+        current_time_elapsed_driver = time_elapsed_driver
+        current_time_passed_cyclist = time_passed_cyclist
+
+        policymaker_scores = []
+        driver_scores = []
+        cyclist_comfort_scores = []
+        cyclist_time_scores = []
+        cyclist_combined_scores = []
+
+        # Width of the car for centerline evaluation
+        car_width = car_dimensions.bounding_box_size[0]
+
+        for j in range(num_sample_points):
+            # Get ego vehicle state at this point
+            ego_x = resampled_trajectory[ego_indices[j], 0]
+            ego_y = resampled_trajectory[ego_indices[j], 1]
+            ego_theta = resampled_trajectory[ego_indices[j], 2]
+
+            # Get bicycle state at this point
+            bicycle_x = bicycle_future_trajectory[bicycle_indices[j], 0]
+            bicycle_y = bicycle_future_trajectory[bicycle_indices[j], 1]
+
+            # Create a simulated state object for evaluation
+            simulated_state = State(x=ego_x, y=ego_y, yaw=ego_theta, v=state.v)
+
+            # Create a simulated obstacle object for evaluation
+            simulated_obstacle = type('obj', (object,), {
+                'get': lambda self=None: (bicycle_x, bicycle_y, 0, 0, CyclistParameters.SPEED, 0)
+            })
+            simulated_obstacles = [simulated_obstacle]
+
+            # Evaluate policymaker (regulatory compliance)
+            policymaker_score = evaluate_distance_to_centerline(
+                ego_x, car_width, ScenarioParameters.CENTERLINE_LOCATION)
+            policymaker_scores.append(policymaker_score)
+
+            # Evaluate driver time efficiency
+            driver_score, current_time_elapsed_driver = evaluate_time_following(
+                'driver_reasons', ScenarioParameters.DT,
+                DriverParameters.DISTANCE_BUFFER, DriverParameters.DISTANCE_REF,
+                DriverParameters.TIME_THRESHOLD, simulated_obstacles,
+                simulated_state, current_time_elapsed_driver)
+            driver_scores.append(driver_score)
+
+            # Evaluate cyclist comfort (distance)
+            cyclist_comfort_score = evaluate_distance_to_obstacle(
+                CyclistParameters.DISTANCE_BUFFER, CyclistParameters.DISTANCE_REF,
+                simulated_obstacles, simulated_state)
+            cyclist_comfort_scores.append(cyclist_comfort_score)
+
+            # Evaluate cyclist comfort (time)
+            cyclist_time_score, current_time_passed_cyclist = evaluate_time_following(
+                'cyclist_reasons', ScenarioParameters.DT,
+                CyclistParameters.DISTANCE_BUFFER, CyclistParameters.DISTANCE_REF,
+                CyclistParameters.TIME_THRESHOLD, simulated_obstacles,
+                simulated_state, current_time_passed_cyclist)
+            cyclist_time_scores.append(cyclist_time_score)
+
+            # Combined cyclist score
+            cyclist_combined_score = cyclist_comfort_score * cyclist_time_score
+            cyclist_combined_scores.append(cyclist_combined_score)
+
+        #delete last value of scores because the ego vehicle is not moving but the bicycle is
+        policymaker_scores = policymaker_scores[:-1]
+        driver_scores = driver_scores[:-1]
+        cyclist_combined_scores = cyclist_combined_scores[:-1]
+
+        #replace first value of reasons scores with the first value of reasons evaluation
+        policymaker_scores[0] = reasons_policymaker_reg_compliance
+        driver_scores[0] = reasons_driver_time_eff
+        cyclist_combined_scores[0] = reasons_cyclist_comfort
+
+        # 5. Calculate average scores for each reason
+        avg_policymaker = np.mean(policymaker_scores[:-1])
+        avg_driver = np.mean(driver_scores)
+        avg_cyclist = np.mean(cyclist_combined_scores)
+
+        # 6. Calculate weighted total score
+        # Define weights for different agents (matching your existing weights)
+        agent_weights = {
+            'policymaker': 0.33,  # Regulatory compliance
+            'driver': 0.33,  # Driver patience/efficiency
+            'cyclist': 0.34  # Cyclist comfort/safety
+        }
+
+        total_score = (
+                agent_weights['policymaker'] * avg_policymaker +
+                agent_weights['driver'] * avg_driver +
+                agent_weights['cyclist'] * avg_cyclist
+        )
+
+        # Store results
+        trajectory_scores.append(total_score)
+
+        detailed_eval = {
+            'trajectory_idx': i,
+            'total_score': total_score,
+            'completion_time': completion_time,
+            'avg_scores': {
+                'policymaker': avg_policymaker,
+                'driver': avg_driver,
+                'cyclist': avg_cyclist
+            },
+            'detailed_scores': {
+                'policymaker': policymaker_scores,
+                'driver': driver_scores,
+                'cyclist_comfort': cyclist_comfort_scores,
+                'cyclist_time': cyclist_time_scores,
+                'cyclist_combined': cyclist_combined_scores
+            }
+        }
+
+        detailed_evaluations.append(detailed_eval)
+
+        logger.info(f"Trajectory {i}: Score {total_score:.3f} (P: {avg_policymaker:.2f}, "
+                    f"D: {avg_driver:.2f}, C: {avg_cyclist:.2f}) "
+                    f"Time: {completion_time:.2f}s")
+
+    # 7. Find the best trajectory
+    if trajectory_scores:
+        best_idx = np.argmax(trajectory_scores)
+        best_score = trajectory_scores[best_idx]
+        best_trajectory = trajectories_full[best_idx]
+        best_evaluation = detailed_evaluations[best_idx]
+
+        logger.info(f"Selected trajectory {best_idx} with score {best_score:.3f}")
+    else:
+        best_idx = None
+        best_trajectory = None
+        best_evaluation = None
+        logger.warning("No trajectories to evaluate")
+
+    return agent_weights, {
+        'scores': trajectory_scores,
+        'best_idx': best_idx,
+        'best_trajectory': best_trajectory,
+        'best_evaluation': best_evaluation,
+        'all_evaluations': detailed_evaluations
+    }
+
+def calculate_trajectory_completion_time(trajectory_res, state, last_index=None):
+    """
+    Calculate the estimated time to complete a trajectory based on vehicle dynamics.
+
+    Args:
+        trajectory_res: The trajectory to analyze
+        state: The current state of the vehicle
+
+    Returns:
+        float: Estimated time to complete the trajectory in seconds
+    """
+    # Start with current velocity
+    current_velocity = state.v
+
+    # Initialize time counter
+    total_time = 0.0
+
+    # Calculate distance between consecutive points
+    if len(trajectory_res) <= 1:
+        return 0.0
+
+    distances = []
+    for i in range(1, len(trajectory_res)):
+        # Calculate Euclidean distance between consecutive points
+        distance = np.linalg.norm(trajectory_res[i, :2] - trajectory_res[i - 1, :2])
+        distances.append(distance)
+
+    # Simulate movement along the trajectory
+    for distance in distances:
+        # Update velocity based on acceleration
+        if last_index == None:
+            current_velocity = min(current_velocity + MAX_ACCEL, Simulation.MAX_SPEED)
+        else:
+            current_velocity = current_velocity
+        # Calculate time needed for this segment
+        segment_time = distance / current_velocity
+        total_time += segment_time
+
+    return total_time
 
 def reasons_evaluation(reasons_cyclist_comfort, reasons_driver_time_eff, reasons_policymaker_reg_compliance,
                        replan_needed, replan_tracker):
@@ -422,7 +1116,7 @@ def initialize_simulation() -> tuple:
 
     # Define moving obstacles
     spawn_location_x = scenario_no_obstacles.start[0] + 1.7
-    spawn_location_y = scenario_no_obstacles.start[1] + 8.8
+    spawn_location_y = scenario_no_obstacles.start[1] + 9.8
     moving_obstacles = [
         MovingObstacleArterial(bicycle_dimensions, spawn_location_x, spawn_location_y, speed = CyclistParameters.SPEED, initial_speed = CyclistParameters.SPEED, offset=True, dt=ScenarioParameters.DT)
     ]
@@ -710,8 +1404,8 @@ def finalize_plot(ax, simulation, mpc, i, dt):
 
     ax.axis("equal")
     ax.grid(True)
-    ax.set_xlim((-10, 10))
-    ax.set_ylim((-42, 20))
+    # ax.set_xlim((-10, 10))
+    ax.set_ylim((-30, 30))
 
     # remove xticks and yticks
     ax.set_xticks([])
@@ -967,13 +1661,13 @@ if __name__ == '__main__':
 
     # Remove the last 15 frames before creating the video
     # WHY? IN THE LAST FRAMES WE MAKE A STOP, SO IT IS NOT INTERESTING TO SEE
-    frame_files = sorted([f for f in os.listdir(results_folder) if f.startswith('frame_') and f.endswith('.jpg')])
-    for frame_file in frame_files[-30:]:
-        os.remove(os.path.join(results_folder, frame_file))
+    # frame_files = sorted([f for f in os.listdir(results_folder) if f.startswith('frame_') and f.endswith('.jpg')])
+    # for frame_file in frame_files[-30:]:
+    #     os.remove(os.path.join(results_folder, frame_file))
 
     # Run the ffmpeg command to create a video from frames
     subprocess.run([
-        'ffmpeg', '-framerate', '5', '-i', 'frame_%04d.jpg',
+        'ffmpeg', '-framerate', '10', '-i', 'frame_%04d.jpg',
         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', 'output_video.mp4'
     ])
 
