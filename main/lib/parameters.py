@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class ScenarioParameters:
     DT = 0.1  # Time step
     CENTERLINE_LOCATION = 0.0  # Centerline location for evaluation
-    LENGTH = 60.0 # Length of the scenario
+    LENGTH = 44.0 # Length of the scenario
 
 @dataclass
 class ReasonParameters:
