@@ -22,12 +22,3 @@ brew install ffmpeg
 - `results/`: This directory is where results from tests and simulations are stored.
 - `visualise_mp.ipynb`: This Jupyter notebook provides a visual interface for inspecting the motion primitives.
 
-## Installation
-
-This project uses Poetry for dependency management. To install the project dependencies, run:
-
-```sh
-poetry install
-
-
-To be completed...
