@@ -6,6 +6,12 @@ class ScenarioParameters:
     DT = 0.1  # Time step
     CENTERLINE_LOCATION = 0.0  # Centerline location for evaluation
     LENGTH = 44.0 # Length of the scenario
+    WIDTH_ROAD = 4.0 # Width of a single road lane
+    X_LOC_GOAL = 2.0  # x location of the goal, right side of the middle of the road
+    Y_LOC_GOAL = 22.0  # y location of the goal
+    X_LOC_EGO = 2.0  # Initial x location of the ego vehicle (AV), right side of the middle of the road
+    X_LOC_CYCLIST_BUFFER = 0.0  # Initial x location of the cyclist
+    Y_LOC_CYCLIST_BUFFER  = 9.7  # Initial x location of the cyclist
 
 @dataclass
 class ReasonParameters:
