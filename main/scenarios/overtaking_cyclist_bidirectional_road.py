@@ -37,7 +37,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def main(replanner: bool = False, vis_frame: bool = False, save_weight_table: bool = False) -> None:
+def main(replanner: bool = False, vis_frame: bool = False, save_weight_table: bool = False, historical_plot: bool = False) -> None:
     """
     Main function to simulate the scenario of an AV overtaking a cyclist in a bidirectional road.
 
@@ -188,7 +188,7 @@ def main(replanner: bool = False, vis_frame: bool = False, save_weight_table: bo
                             reasons_cyclist_values, reasons_driver_values, reasons_policymaker_values, distance_values,
                             reasons_cyclist_comfort, reasons_driver_time_eff, reasons_policymaker_reg_compliance,
                             speed_values, time_values, xref_deviation_values, xref_deviation_value,
-                            static_x_axis=True, max_time=15) # static_x_axis=False)
+                            static_x_axis=True, max_time=15, historical_plot=historical_plot) # static_x_axis=False)
 
 
         # Move all obstacles one step ahead
@@ -659,7 +659,7 @@ def visualize_trajectory_evaluations(eval_results, trajectories_full, moving_obs
                 )
 
         # Add legend to each plot
-        ax.legend(loc='center left', fontsize=20)
+        # ax.legend(loc='center left', fontsize=20)
 
         # Group the annotations for both regions together at the bottom
         # This creates a cleaner design and makes comparison easier
@@ -733,7 +733,7 @@ def visualize_trajectory_evaluations(eval_results, trajectories_full, moving_obs
         i = style_info['index']
 
         # Get trajectory description
-        traj_description = trajectory_descriptions.get(i, f"Trajectory Type {i}")
+        # traj_description = trajectory_descriptions.get(i, f"Trajectory Type {i}")
 
         # Plot main trajectory line with improved label
         ax_spatial.plot(
@@ -742,10 +742,10 @@ def visualize_trajectory_evaluations(eval_results, trajectories_full, moving_obs
             linestyle=style,
             linewidth=width * 2,  # Make lines thicker for better visibility
             #label=f"Traj {i}: {traj_description} (Score: {score:.3f})"  # Enhanced label
-            label=f"Trajectory {i+1} \n {traj_description} \n"  # Enhanced label
+            label=f"Trajectory {i+1}"  # Enhanced label
         )
 
-    goal_x, goal_y = trajectory_points[0, 0], ScenarioParameters.LENGTH/2
+    goal_x, goal_y = ScenarioParameters.X_LOC_GOAL, ScenarioParameters.Y_LOC_GOAL
     ax_spatial.add_patch(plt.Rectangle(
         (goal_x - 1, goal_y - 0.5),  # Bottom-left corner of the rectangle
         2, 1,  # Width and height of the rectangle
@@ -766,7 +766,7 @@ def visualize_trajectory_evaluations(eval_results, trajectories_full, moving_obs
     # Set very specific limits that focus tightly on the car and immediate surroundings
     # These values should be adjusted based on your specific scenario dimensions
     ax_spatial.set_xlim(car_x - 12, car_x + 10)  # 14 units wide centered on car
-    ax_spatial.set_ylim(car_y - 2, car_y + 37)  # More space ahead than behind
+    ax_spatial.set_ylim(car_y - 2, ScenarioParameters.Y_LOC_GOAL + 2    )  # More space ahead than behind
 
     # Set aspect ratio to equal - IMPORTANT for consistent scaling
     ax_spatial.set_aspect('equal')
@@ -1358,9 +1358,10 @@ def evaluate_trajectories_for_reasons(trajectories_full, moving_obstacles, state
         # 6. Calculate weighted total score
         # Define weights for different agents (matching your existing weights)
         agent_weights = {
-            'policymaker': 1/3,  # Regulatory compliance
-            'driver': 1/3,  # Driver patience/efficiency
-            'cyclist': 1/3  # Cyclist comfort/safety
+
+            'policymaker': 1/9, # 1/3,  # Regulatory compliance
+            'driver': 4/9, # 1/3,  # Driver patience/efficiency
+            'cyclist': 4/9 # 1/3 Cyclist comfort/safety
         }
 
         print(f"Agent Weights: {agent_weights}")
@@ -1979,8 +1980,8 @@ def initialize_simulation() -> tuple:
     scenario_visualization = arterial.create_scenario(frame_visualization=True)
 
     # Define moving obstacles
-    spawn_location_x = scenario_no_obstacles.start[0] + 1.7
-    spawn_location_y = scenario_no_obstacles.start[1] + 9.7
+    spawn_location_x = scenario_no_obstacles.start[0] + ScenarioParameters.X_LOC_CYCLIST_BUFFER
+    spawn_location_y = scenario_no_obstacles.start[1] + ScenarioParameters.Y_LOC_CYCLIST_BUFFER
     moving_obstacles = [
         MovingObstacleArterial(bicycle_dimensions, spawn_location_x, spawn_location_y, speed = CyclistParameters.SPEED, initial_speed = CyclistParameters.SPEED, offset=True, dt=ScenarioParameters.DT)
     ]
@@ -2110,7 +2111,7 @@ def plot_path(path, ax):
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_title('Path')
-    ax.legend()
+    # ax.legend()
     ax.grid(True)
     ax.axis('equal')
 
@@ -2195,8 +2196,8 @@ def draw_static_elements(ax, scenario):
     # Vertical lines
     ax.axvline(x=0 + 0.3, color='#FFBD00')
     ax.axvline(x=0 - 0.3, color='#FFBD00')
-    ax.axvline(x=0 + 3.8, color='#FFFFFF')
-    ax.axvline(x=0 - 3.8, color='#FFFFFF')
+    ax.axvline(x=ScenarioParameters.WIDTH_ROAD -0.2, color='#FFFFFF')
+    ax.axvline(x=-ScenarioParameters.WIDTH_ROAD + 0.2, color='#FFFFFF')
 
 
 def update_obstacle_history(moving_obstacles, obstacle_history):
@@ -2258,7 +2259,7 @@ def finalize_plot(ax, simulation, mpc, i, dt):
     ax.plot(mpc.xref[0, :], mpc.xref[1, :], "+k")
 
     # Legend for clarity
-    ax.legend(fontsize=12, loc="upper right")
+    # ax.legend(fontsize=12, loc="upper right")
 
     # Axis labels and formatting
     ax.set_title(f"Time: {i * dt:.2f} [s]", fontsize=20)
@@ -2404,7 +2405,7 @@ def plot_distance(ax, time_values, distance_values, DISTANCE_THRESHOLD_CAR, DIST
     ax.set_title('Distance Between Car and Bicycle', fontsize=18)
 
     # Add legend
-    ax.legend(fontsize=12)
+    # ax.legend(fontsize=12)
 
     # Enable grid
     ax.grid(True)
@@ -2413,7 +2414,7 @@ def visualize_frame(dt, car_dimensions, bicycle_dimensions, collision_xy, i, mov
                     scenario, simulation, state, tmp_trajectory, trajectory_res,
                     reasons_cyclist_values, reasons_driver_values, reasons_policymaker_values, distance_values,
                     reasons_cyclist_comfort, reasons_driver_time_eff, reasons_policymaker_reg_compliance, speed_values, time_values,  xref_deviation_values, xref_deviation_value,
-                    static_x_axis=True, max_time=20):
+                    static_x_axis=True, max_time=20, historical_plot=False):
     """
     Visualize the simulation frame with an option for static or dynamic x-axis.
 
@@ -2440,7 +2441,7 @@ def visualize_frame(dt, car_dimensions, bicycle_dimensions, collision_xy, i, mov
 
         # Update ax1 with the car, obstacles, and other related information
         plot_car_and_obstacles(ax1, tmp_trajectory, collision_xy, state, trajectory_res, scenario, moving_obstacles,
-                               simulation, mpc, car_dimensions, bicycle_dimensions, i, dt, historical_plot=False)
+                               simulation, mpc, car_dimensions, bicycle_dimensions, i, dt, historical_plot=historical_plot)
 
         # Update ax2 with reasons values over time
         time_value = i * dt  # Time value for current simulation step
@@ -2516,7 +2517,11 @@ if __name__ == '__main__':
     # Currently, the program will produce .txt file (stakeholder_weight_analysis_formatted.txt), which should be copy paste to:
     # /Users/lsuryana/Library/CloudStorage/GoogleDrive-lucaselbert@gmail.com/My Drive/PhD/Publication/IAVVC_2025
     # Then run analysis.ipynb last slide
-    main(replanner=False, vis_frame=True, save_weight_table=False)
+    main(replanner=True, vis_frame=True, save_weight_table=False, historical_plot=False)
+    # Replanner = True mean we will replan if any reason is below the threshold
+    # vis_frame = True means we will visualize each frame and save it to ../results/reasons_evaluation
+    # save_weight_table = True means we will save the weight analysis table to ../results/reasons_evaluation/stakeholder_weight_analysis_formatted.txt
+    # historical_plot = False means we will only plot the current position of the car and moving obstacles, True means we will plot the history as well
 
     # Get the current script's directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
