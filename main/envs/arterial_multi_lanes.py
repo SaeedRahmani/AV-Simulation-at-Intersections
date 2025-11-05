@@ -17,8 +17,8 @@ class ArterialMultiLanes:
     def __init__(self, num_lanes=2, goal_lane=1):
         self.num_lanes = num_lanes
         self.goal_lane = goal_lane
-        self.width_road = 3
-        self.width_pavement = 4
+        self.width_road = ScenarioParameters.WIDTH_ROAD
+        self.width_pavement = 3
         self.length = ScenarioParameters.LENGTH
         self.allowed_goal_theta_difference = np.pi / 16
         self.goal_lane_adjustment = goal_lane - 1
@@ -34,8 +34,8 @@ class ArterialMultiLanes:
 
     def calculate_offsets(self):
         # to determine the location of the pavements
-        left_pavement = - (self.num_lanes * self.width_road / 2) - (self.width_pavement / 2) - 1
-        right_pavement = (self.num_lanes * self.width_road / 2) + (self.width_pavement / 2) + 1
+        left_pavement = - (self.num_lanes * self.width_road / 2) - (self.width_pavement / 2)
+        right_pavement = (self.num_lanes * self.width_road / 2) + (self.width_pavement / 2)
         lane_offset = (self.num_lanes // 2 - 0.5) * self.width_road - self.goal_lane_adjustment * self.width_road
         if self.num_lanes % 2 != 0:
             lane_offset += self.width_road / 2
@@ -49,11 +49,10 @@ class ArterialMultiLanes:
 
         left_pavement, right_pavement, lane_offset = self.calculate_offsets()
         start = (self.width_road * (self.num_lanes / 2 - 0.5), -self.length / 2, np.pi/2)
-        goal = (lane_offset, self.length / 2, np.pi/2)
+        goal = (ScenarioParameters.X_LOC_EGO, ScenarioParameters.Y_LOC_GOAL, np.pi/2)
 
         car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
-        adjustment_x_goal = 0.30 # to adjust the goal area to be centered at the goal point
-        goal_area = BoxObstacle(xy_width=(car_dimensions.bounding_box_size[0], car_dimensions.bounding_box_size[1]), height=1, xy_center=(goal[0] + adjustment_x_goal, goal[1]))
+        goal_area = BoxObstacle(xy_width=(car_dimensions.bounding_box_size[0], car_dimensions.bounding_box_size[1]), height=1, xy_center=(goal[0], goal[1]))
 
         # TO SET GOAL AREA AS A BOX
         # goal_area = BoxObstacle(xy_width=(self.width_road, self.width_road), height=1, xy_center=(goal[0], goal[1]))
