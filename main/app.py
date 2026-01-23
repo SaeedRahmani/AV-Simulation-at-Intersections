@@ -40,8 +40,8 @@ from tkinter import messagebox
 # Mapping from readable names to internal values
 POSITION_MAP = {"South": 1, "West": 2, "North": 3, "East": 4}
 TURN_MAP = {"Left": 1, "Straight": 2, "Right": 3}
-EXIT_MAP = {"1st Exit": 1, "2nd Exit": 2, "3rd Exit": 3, "4th Exit": 4}
 LANE_MAP = {"Inner": 1, "Outer": 2}
+TURN_MAP_ROUNDABOUT = {"Right (1st exit)": 3, "Straight (2nd exit)": 2, "Left (3rd exit)": 1, "U-turn (4th exit)": 4}
 
 PLANNER_SCENARIOS = {
     "T-Intersection (Simple)": {
@@ -81,8 +81,8 @@ PLANNER_SCENARIOS = {
         "params": {
             "start_pos": {"type": "choice", "options": ["South", "West", "North", "East"], "default": "South", 
                           "label": "Entry Position", "map": POSITION_MAP},
-            "turn_indicator": {"type": "choice", "options": ["1st Exit", "2nd Exit", "3rd Exit", "4th Exit"], "default": "4th Exit", 
-                               "label": "Exit", "map": EXIT_MAP},
+            "turn_indicator": {"type": "choice", "options": ["Right (1st exit)", "Straight (2nd exit)", "Left (3rd exit)", "U-turn (4th exit)"], 
+                               "default": "U-turn (4th exit)", "label": "Exit Direction", "map": TURN_MAP_ROUNDABOUT},
             "size": {"type": "choice", "options": ["Normal", "Big"], "default": "Big", "label": "Roundabout Size"},
         }
     },
@@ -113,8 +113,8 @@ CONTROLLER_SCENARIOS = {
         "params": {
             "start_pos": {"type": "choice", "options": ["South", "West", "North", "East"], "default": "South", 
                           "label": "Entry Position", "map": POSITION_MAP},
-            "turn_indicator": {"type": "choice", "options": ["1st Exit", "2nd Exit", "3rd Exit", "4th Exit"], "default": "4th Exit", 
-                               "label": "Exit", "map": EXIT_MAP},
+            "turn_indicator": {"type": "choice", "options": ["Right (1st exit)", "Straight (2nd exit)", "Left (3rd exit)", "U-turn (4th exit)"], 
+                               "default": "U-turn (4th exit)", "label": "Exit Direction", "map": TURN_MAP_ROUNDABOUT},
         }
     },
     "Multi-lane Intersection": {
