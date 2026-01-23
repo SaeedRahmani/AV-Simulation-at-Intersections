@@ -108,6 +108,23 @@ python mpc_intersection.py
 
 You should see a simulation window with an intersection scenario.
 
+## Quick Start - Interactive Interface
+
+The easiest way to use this tool is through the interactive CLI:
+
+```bash
+cd main
+python run.py
+```
+
+This launches a modern terminal interface where you can:
+- 🎯 **Planner** - Run motion primitive search algorithms
+- 🎮 **Controller** - Test MPC-based trajectory tracking
+- 📊 **Full Simulation** - Combined planner + controller scenarios
+- 📈 **Sensitivity Analysis** - Parameter studies for both planner and controller
+
+The interface auto-installs any missing dependencies and guides you through available options.
+
 ## Running a Simulation
 
 ### Intersection Simulation with Dynamic Obstacles
