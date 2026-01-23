@@ -1,17 +1,26 @@
 [tool.poetry]
-name = "ro47005-project"
+name = "av-simulation-at-intersections"
 version = "0.1.0"
-description = ""
-authors = ["Your Name <you@example.com>"]
+description = "A Bi-level Framework for Modeling 2D Vehicular Movements and Interactions at Urban Junctions"
+authors = ["Saeed Rahmani"]
 readme = "README.md"
-packages = [{include = "ro47005-project"}]
+packages = [{include = "main"}]
 
 [tool.poetry.dependencies]
-python = ">=3.8,<3.10"
-gym = "0.21.0"
-tqdm = "4.64.1"
-urdfenvs = {extras = ["scenes"], version = "^0.4.0"}
+python = ">=3.8,<3.12"
+numpy = "^1.21.0"
+matplotlib = "^3.5.0"
+cvxpy = "^1.2.0"
+tqdm = "^4.64.0"
+networkx = "^2.8.0"
 
+[tool.poetry.group.dev.dependencies]
+# Optional dependencies for Prius motion primitives
+gym = {version = "0.21.0", optional = true}
+urdfenvs = {extras = ["scenes"], version = "^0.4.0", optional = true}
+
+[tool.poetry.extras]
+prius = ["gym", "urdfenvs"]
 
 [build-system]
 requires = ["poetry-core"]
