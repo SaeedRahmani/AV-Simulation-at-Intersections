@@ -4,6 +4,7 @@ author: Atsushi Sakai (@Atsushi_twi)
 """
 import json
 import math
+import os
 import sys
 from typing import Tuple, List, Optional
 
@@ -14,7 +15,9 @@ from lib.car_dimensions import CarDimensions
 from lib.simulation import State, Simulation
 from lib.trajectories import calc_nearest_index, calc_nearest_index_in_direction
 
-with open('../config/mpc_config_sensitivity.json', 'r') as f:
+# Load config relative to this file's location
+_config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'mpc_config_sensitivity.json')
+with open(_config_path, 'r') as f:
     config = json.load(f)
 
 # Extract parameters from config
@@ -147,7 +150,7 @@ def _linear_mpc_control(xref, xbar, x0, dref, reaches_end, dt, car_dimensions: C
     dref: reference steer angle
     :param reaches_end:
     """
-    with open('../config/mpc_config_sensitivity.json', 'r') as f:
+    with open(_config_path, 'r') as f:
         config = json.load(f)
 
     # Extract parameters from config

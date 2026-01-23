@@ -1,5 +1,6 @@
 import itertools
 import math
+import os
 from typing import List
 import sys
 sys.path.append('..')
@@ -8,8 +9,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 # from envs.t_intersection import t_intersection
-from envs.roundabout_big import roundabout
-# from envs.roundabout_big import roundabout
+from envs.roundabout import roundabout
 
 from lib.car_dimensions import CarDimensions, BicycleModelDimensions
 from lib.collision_avoidance import check_collision_moving_cars, get_cutoff_curve_by_position_idx
@@ -33,9 +33,13 @@ def main():
     mps = load_motion_primitives(version='bicycle_model')
     car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
 
-    start_pos = 1
-    turn_indicator = 4
-    scenario = roundabout(start_pos=start_pos, turn_indicator=turn_indicator)
+    # Read parameters from environment (set by GUI) or use defaults
+    start_pos = int(os.environ.get('AV_PARAM_START_POS', '1'))
+    turn_indicator = int(os.environ.get('AV_PARAM_TURN_INDICATOR', '4'))
+    size = os.environ.get('AV_PARAM_SIZE', 'big')
+    print(f"[Config] start_pos = {start_pos}, turn_indicator = {turn_indicator}, size = {size}")
+    
+    scenario = roundabout(start_pos=start_pos, turn_indicator=turn_indicator, size=size)
     # scenario = t_intersection(turn_left=True)
     other_vehicles = True
 

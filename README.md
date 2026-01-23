@@ -108,6 +108,36 @@ python mpc_intersection.py
 
 You should see a simulation window with an intersection scenario.
 
+## Quick Start - Interactive Interface
+
+### GUI Application (Recommended)
+
+Launch the modern graphical interface:
+
+```bash
+cd main
+python app.py
+```
+
+This opens a sleek desktop application with:
+- 🎯 **Planner** tab - Motion primitive search algorithms
+- 🎮 **Controller** tab - MPC-based trajectory tracking scenarios
+- 📊 **Simulation** tab - Full simulation scenarios
+- 🔧 **Tools** tab - Motion primitive generation & utilities
+- 🌙 Dark/Light mode toggle
+- Live output windows for each script
+
+### Command-Line Interface
+
+For terminal users, there's also a CLI:
+
+```bash
+cd main
+python run.py
+```
+
+Both interfaces auto-install missing dependencies.
+
 ## Running a Simulation
 
 ### Intersection Simulation with Dynamic Obstacles
@@ -132,7 +162,7 @@ python mpc_sensitivity_analysis.py
 
 The MPC parameters can be configured via JSON files in `main/config/`:
 - `mpc_config.json` - Main MPC configuration
-- `mpc_config_sensitivity.json` - Configuration for sensitivity analysis
+- `mpc_config_sensitivity.json` - Working copy for sensitivity analysis (modified during analysis runs)
 
 ## Project Structure
 

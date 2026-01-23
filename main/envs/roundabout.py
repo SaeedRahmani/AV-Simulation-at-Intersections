@@ -7,9 +7,30 @@ from lib.obstacles import BoxObstacle, CircleObstacle
 from lib.scenario import Scenario
 
 
-def roundabout(turn_indicator: int, start_pos: int) -> Scenario:
-    width_road = 4
-    width_traffic_island = 2
+def roundabout(turn_indicator: int, start_pos: int, size: str = 'normal') -> Scenario:
+    """
+    Create a roundabout scenario.
+    
+    Args:
+        turn_indicator: 1=left, 2=straight, 3=right, 4=U-turn
+        start_pos: 1=south, 2=west, 3=north, 4=east
+        size: 'normal' or 'big' - determines the roundabout dimensions
+            - 'normal': width_road=4, width_traffic_island=2, center_radius=scale_factor*2
+            - 'big': width_road=4.2, width_traffic_island=4, center_radius=scale_factor*4
+    
+    Returns:
+        Scenario object for the roundabout
+    """
+    # Size-dependent parameters
+    if size == 'big':
+        width_road = 4.2
+        width_traffic_island = 4
+        center_radius_factor = 4
+    else:  # 'normal' or default
+        width_road = 4
+        width_traffic_island = 2
+        center_radius_factor = 2
+    
     width_pavement = 5
     length = 30
     height = 0.5
@@ -73,7 +94,7 @@ def roundabout(turn_indicator: int, start_pos: int) -> Scenario:
         # Full roundabout
         
         # Center of the roundabout
-        CircleObstacle(radius= scale_factor * 2, height=height,xy_center=(0, 0)),
+        CircleObstacle(radius= scale_factor * center_radius_factor, height=height,xy_center=(0, 0)),
         
         # Medians (Islands)
         # south median
