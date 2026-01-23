@@ -4,7 +4,7 @@ import sys
 sys.path.append('..')
 
 # from envs.intersection import intersection
-from envs.roundabout_big import roundabout
+from envs.roundabout import roundabout
 # from envs.roundabout import roundabout
 from lib.car_dimensions import BicycleModelDimensions, CarDimensions
 from lib.helpers import measure_time
@@ -24,7 +24,7 @@ if __name__ == '__main__':
     
     for version in ['bicycle_model']:
         mps = load_motion_primitives(version=version)
-        scenario = roundabout(start_pos=start_pos, turn_indicator=turn_indicator)
+        scenario = roundabout(start_pos=start_pos, turn_indicator=turn_indicator, size='big')
         car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
 
         search = MotionPrimitiveSearch(scenario, car_dimensions, mps, margin=car_dimensions.radius)

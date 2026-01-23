@@ -8,8 +8,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 # from envs.t_intersection import t_intersection
-from envs.roundabout_big import roundabout
-# from envs.roundabout_big import roundabout
+from envs.roundabout import roundabout
 
 from lib.car_dimensions import CarDimensions, BicycleModelDimensions
 from lib.collision_avoidance import check_collision_moving_cars, get_cutoff_curve_by_position_idx
@@ -35,7 +34,7 @@ def main():
 
     start_pos = 1
     turn_indicator = 4
-    scenario = roundabout(start_pos=start_pos, turn_indicator=turn_indicator)
+    scenario = roundabout(start_pos=start_pos, turn_indicator=turn_indicator, size='big')
     # scenario = t_intersection(turn_left=True)
     other_vehicles = True
 
