@@ -110,20 +110,33 @@ You should see a simulation window with an intersection scenario.
 
 ## Quick Start - Interactive Interface
 
-The easiest way to use this tool is through the interactive CLI:
+### GUI Application (Recommended)
+
+Launch the modern graphical interface:
+
+```bash
+cd main
+python app.py
+```
+
+This opens a sleek desktop application with:
+- 🎯 **Planner** tab - Motion primitive search algorithms
+- 🎮 **Controller** tab - MPC-based trajectory tracking scenarios
+- 📊 **Simulation** tab - Full simulation scenarios
+- 🔧 **Tools** tab - Motion primitive generation & utilities
+- 🌙 Dark/Light mode toggle
+- Live output windows for each script
+
+### Command-Line Interface
+
+For terminal users, there's also a CLI:
 
 ```bash
 cd main
 python run.py
 ```
 
-This launches a modern terminal interface where you can:
-- 🎯 **Planner** - Run motion primitive search algorithms
-- 🎮 **Controller** - Test MPC-based trajectory tracking
-- 📊 **Full Simulation** - Combined planner + controller scenarios
-- 📈 **Sensitivity Analysis** - Parameter studies for both planner and controller
-
-The interface auto-installs any missing dependencies and guides you through available options.
+Both interfaces auto-install missing dependencies.
 
 ## Running a Simulation
 
