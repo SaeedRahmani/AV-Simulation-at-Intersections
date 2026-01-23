@@ -1,6 +1,7 @@
 import json
 import itertools
 import math
+import os
 from typing import List
 import sys
 sys.path.append('..')
@@ -86,7 +87,8 @@ def main():
     #########    
     
     # Reseting the configuration file
-    config_file_path = '../config/mpc_config_sensitivity.json'
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_file_path = os.path.join(_script_dir, '..', 'config', 'mpc_config_sensitivity.json')
     reset_config(config_file_path)
     # Loading the configuration file
     with open(config_file_path, 'r') as f:
@@ -177,7 +179,7 @@ def main():
         config[parameter_name] = parameter
         
         # Save the updated configuration
-        with open('../config/mpc_config_sensitivity.json', 'w') as f:
+        with open(config_file_path, 'w') as f:
             json.dump(config, f, indent=4)    
         
         mpc = MPC(cx=trajectory_full[:, 0], cy=trajectory_full[:, 1], cyaw=trajectory_full[:, 2], dl=dl, dt=DT,
