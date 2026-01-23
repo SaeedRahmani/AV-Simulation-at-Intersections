@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 import matplotlib.lines as mlines
 import sys
+import os
 sys.path.append('..')
 
 from envs.intersection import intersection
@@ -15,9 +16,10 @@ from lib.plotting import draw_scenario, draw_astar_search_points
 if __name__ == '__main__':
     fig, ax = plt.subplots()
     
-    #Scenario Parameters
-    start_pos=3
-    turn_indicator=1
+    # Read parameters from environment (set by GUI) or use defaults
+    start_pos = int(os.environ.get('AV_PARAM_START_POS', '3'))
+    turn_indicator = int(os.environ.get('AV_PARAM_TURN_INDICATOR', '1'))
+    print(f"[Config] start_pos = {start_pos}, turn_indicator = {turn_indicator}")
     
     for version in ['bicycle_model']:
         mps = load_motion_primitives(version=version)

@@ -1,5 +1,6 @@
 import itertools
 import math
+import os
 from typing import List
 import sys
 sys.path.append('..')
@@ -31,12 +32,17 @@ def main():
     mps = load_motion_primitives(version='bicycle_model')
     car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
 
-    start_pos = 1
-    turn_indicator = 1
+    # Read parameters from environment (set by GUI) or use defaults
+    start_pos = int(os.environ.get('AV_PARAM_START_POS', '1'))
+    turn_indicator = int(os.environ.get('AV_PARAM_TURN_INDICATOR', '1'))
+    start_lane = int(os.environ.get('AV_PARAM_START_LANE', '1'))
+    goal_lane = int(os.environ.get('AV_PARAM_GOAL_LANE', '1'))
+    print(f"[Config] start_pos={start_pos}, turn_indicator={turn_indicator}, start_lane={start_lane}, goal_lane={goal_lane}")
+    
     scenario = intersection(start_pos=start_pos, 
                             turn_indicator=turn_indicator, 
-                            start_lane=1, 
-                            goal_lane=1,
+                            start_lane=start_lane, 
+                            goal_lane=goal_lane,
                             number_of_lanes=2
                             )
     # scenario = t_intersection(turn_left=True)

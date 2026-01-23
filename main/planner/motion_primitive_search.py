@@ -1,9 +1,10 @@
 from matplotlib import pyplot as plt
 import matplotlib.lines as mlines
 import sys
+import os
 sys.path.append('..')
 
-from envs.t_intersection import t_intersection
+from envs.t_intersection_old import t_intersection
 from lib.car_dimensions import BicycleModelDimensions, CarDimensions
 from lib.helpers import measure_time
 from lib.motion_primitive import load_motion_primitives
@@ -11,10 +12,14 @@ from lib.archive.motion_primitive_search_original import MotionPrimitiveSearch
 from lib.plotting import draw_scenario, draw_astar_search_points
 
 if __name__ == '__main__':
+    # Read parameters from environment (set by GUI) or use defaults
+    turn_left = os.environ.get('AV_PARAM_TURN_LEFT', 'True').lower() == 'true'
+    print(f"[Config] turn_left = {turn_left}")
+    
     fig, ax = plt.subplots()
     for version in ['bicycle_model']:
         mps = load_motion_primitives(version=version)
-        scenario = t_intersection(turn_left=True)
+        scenario = t_intersection(turn_left=turn_left)
         car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
 
         search = MotionPrimitiveSearch(scenario, car_dimensions, mps, margin=car_dimensions.radius)

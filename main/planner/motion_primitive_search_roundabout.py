@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 import matplotlib.lines as mlines
 import sys
+import os
 sys.path.append('..')
 
 # from envs.intersection import intersection
@@ -18,13 +19,15 @@ if __name__ == '__main__':
     fig, ax = plt.subplots()
     # fig, ax = plt.subplots(figsize=(10, 7))
     
-    #Scenario Parameters
-    start_pos=1
-    turn_indicator=4
+    # Read parameters from environment (set by GUI) or use defaults
+    start_pos = int(os.environ.get('AV_PARAM_START_POS', '1'))
+    turn_indicator = int(os.environ.get('AV_PARAM_TURN_INDICATOR', '4'))
+    size = os.environ.get('AV_PARAM_SIZE', 'big')
+    print(f"[Config] start_pos = {start_pos}, turn_indicator = {turn_indicator}, size = {size}")
     
     for version in ['bicycle_model']:
         mps = load_motion_primitives(version=version)
-        scenario = roundabout(start_pos=start_pos, turn_indicator=turn_indicator, size='big')
+        scenario = roundabout(start_pos=start_pos, turn_indicator=turn_indicator, size=size)
         car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
 
         search = MotionPrimitiveSearch(scenario, car_dimensions, mps, margin=car_dimensions.radius)

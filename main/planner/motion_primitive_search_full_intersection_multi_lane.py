@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 import matplotlib.lines as mlines
 import sys
+import os
 sys.path.append('..')
 
 from envs.intersection_multi_lanes import intersection
@@ -14,17 +15,20 @@ from lib.plotting import draw_scenario, draw_astar_search_points
 if __name__ == '__main__':
     fig, ax = plt.subplots()
             
-    #Scenario Parameters
-    start_pos=1
-    turn_indicator=2
+    # Read parameters from environment (set by GUI) or use defaults
+    start_pos = int(os.environ.get('AV_PARAM_START_POS', '1'))
+    turn_indicator = int(os.environ.get('AV_PARAM_TURN_INDICATOR', '2'))
+    start_lane = int(os.environ.get('AV_PARAM_START_LANE', '1'))
+    goal_lane = int(os.environ.get('AV_PARAM_GOAL_LANE', '2'))
+    print(f"[Config] start_pos={start_pos}, turn_indicator={turn_indicator}, start_lane={start_lane}, goal_lane={goal_lane}")
     
     for version in ['bicycle_model']:
         mps = load_motion_primitives(version=version)
         scenario = intersection(
             turn_indicator=turn_indicator,
             start_pos=start_pos, 
-            start_lane=1,
-            goal_lane=2, # Does not work
+            start_lane=start_lane,
+            goal_lane=goal_lane,
             number_of_lanes=3)
         car_dimensions: CarDimensions = BicycleModelDimensions(skip_back_circle_collision_checking=False)
 
