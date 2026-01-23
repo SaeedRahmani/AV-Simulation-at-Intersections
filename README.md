@@ -119,13 +119,22 @@ cd main
 python app.py
 ```
 
+<p align="center">
+  <img src="docs/images/app_screenshot.png" alt="GUI Application" width="800">
+</p>
+
 This opens a sleek desktop application with:
 - 🎯 **Planner** tab - Motion primitive search algorithms
 - 🎮 **Controller** tab - MPC-based trajectory tracking scenarios
-- 📊 **Simulation** tab - Full simulation scenarios
 - 🔧 **Tools** tab - Motion primitive generation & utilities
 - 🌙 Dark/Light mode toggle
 - Live output windows for each script
+
+Running a scenario produces real-time simulation output:
+
+<p align="center">
+  <img src="docs/images/simulation_output.png" alt="Simulation Output" width="600">
+</p>
 
 ### Command-Line Interface
 
