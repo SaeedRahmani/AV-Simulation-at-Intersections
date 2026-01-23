@@ -132,7 +132,7 @@ python mpc_sensitivity_analysis.py
 
 The MPC parameters can be configured via JSON files in `main/config/`:
 - `mpc_config.json` - Main MPC configuration
-- `mpc_config_sensitivity.json` - Configuration for sensitivity analysis
+- `mpc_config_sensitivity.json` - Working copy for sensitivity analysis (modified during analysis runs)
 
 ## Project Structure
 
