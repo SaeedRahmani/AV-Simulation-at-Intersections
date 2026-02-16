@@ -1,4 +1,4 @@
-# A Bi-level Framework for Modeling 2D Vehicular Movements and Interactions at Urban Junctions
+# JunctionSim: A Bi-level Framework for Modeling 2D Vehicular Movements and Interactions at Urban Junctions
 
 This project is a comprehensive collection of scripts and modules related to motion primitives and A* search algorithms. It provides a robust framework for creating and visualizing motion primitives for different vehicle models, and includes a variety of scenarios and environments for testing and development.
 
